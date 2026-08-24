@@ -1,8 +1,12 @@
-# Voz de Filadelfia — Estudio de transmisión
+# Filadelfia Broadcaster
 
-Aplicación de escritorio para transmitir en vivo a la emisora web (SHOUTcast /
-Centova Cast), con mezclador de micrófono y música, medidores de nivel,
-grabación del programa y monitoreo de oyentes.
+Aplicación de escritorio para transmitir en vivo a la emisora **Voz de
+Filadelfia** (SHOUTcast / Centova Cast): mesa con varios micrófonos, música,
+cortinas, cadena de voz (ecualizador, compresor, puerta y limitador),
+grabación del programa y monitoreo del aire.
+
+Para que aparezca el logotipo, basta con dejar `icono.png` en esta carpeta:
+el `.ico` de Windows se genera solo.
 
 Es **portable**: toda la configuración se guarda junto a la aplicación. Copiar
 la carpeta a otro equipo (o a un USB) se lleva los ajustes puestos.

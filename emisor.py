@@ -120,7 +120,9 @@ def construir_comando(destino=None, grabar=None, legacy=False, a_tuberia=False):
 
     cmd += _salida_codec(aj.get("codec", "mp3"), int(aj["bitrate"]))
     # ffmpeg convierte 48k (mezclador) -> 44.1k (servidor) con soxr, gratis
-    cmd += ["-ar", str(int(aj.get("muestreo_salida", 44100))), "-ac", "2"]
+    salida_canales = "1" if aj.get("emitir_mono") else "2"
+    cmd += ["-ar", str(int(aj.get("muestreo_salida", 44100))),
+            "-ac", salida_canales]
 
     if a_tuberia:
         cmd += ["pipe:1"]

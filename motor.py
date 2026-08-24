@@ -46,7 +46,9 @@ class CanalMicro:
         self.volumen = float(ajustes.get("volumen", 0.9))
         self.eq = mod_eq.Ecualizador(muestreo,
                                      activo=bool(config.get("eq_activo", True)))
-        self.eq.cargar(ajustes.get("eq") or {}, ajustes.get("eq_preset", "Plano"))
+        valores_eq = dict(ajustes.get("eq") or {})
+        valores_eq["zumbido"] = float(ajustes.get("zumbido", 0) or 0)
+        self.eq.cargar(valores_eq, ajustes.get("eq_preset", "Plano"))
         self.comp = mod_eq.Compresor(
             muestreo,
             umbral_db=float(ajustes.get("comp_umbral", -26)),
@@ -478,4 +480,6 @@ class Mezclador:
             c.puerta.ajustar(umbral_db=aj.get("puerta_umbral"),
                              activo=aj.get("puerta"))
             c.eq.activo = activo
-            c.eq.cargar(aj.get("eq") or {}, aj.get("eq_preset", "Plano"))
+            v = dict(aj.get("eq") or {})
+            v["zumbido"] = float(aj.get("zumbido", 0) or 0)
+            c.eq.cargar(v, aj.get("eq_preset", "Plano"))

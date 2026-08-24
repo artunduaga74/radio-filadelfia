@@ -301,10 +301,12 @@ print("")
 print("=== 12. Cada microfono con su propio ecualizador ===")
 m6 = motor.Mezclador(emisor=None)
 m6.monitor_activo = False
+# los canales traen el filtro de zumbido puesto de fabrica; aqui se quita
+# para medir SOLO lo que hace el ecualizador
 m6.canales[0].eq.cargar({"graves": 0, "medios": 0, "presencia": 0, "aire": 0,
-                         "corte_grave": False})
+                         "corte_grave": False, "zumbido": 0})
 m6.canales[1].eq.cargar({"graves": 0, "medios": -12, "presencia": 0, "aire": 0,
-                         "corte_grave": False})
+                         "corte_grave": False, "zumbido": 0})
 # el compresor nivela las diferencias, y aqui queremos medir SOLO el
 # ecualizador: se apaga en los dos canales
 for c in m6.canales:

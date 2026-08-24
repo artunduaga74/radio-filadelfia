@@ -1,4 +1,4 @@
-# CLAUDE.md — Estudio de transmisión "Voz de Filadelfia"
+# CLAUDE.md — Filadelfia Broadcaster
 
 > Memoria del proyecto. Leer completo antes de tocar código.
 
@@ -106,7 +106,7 @@ eq.py              cadena de voz: ecualizador, compresor, puerta y limitador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           275 comprobaciones automáticas
+pruebas/           285 comprobaciones automáticas
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -178,6 +178,33 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **Segunda ronda de calidad: zumbido de red, mono y marca.**
+  El usuario dijo que había mejorado pero "algo le falta". Se midió su
+  micrófono real otra vez, ahora a fondo:
+  - **DC a cero y captura limpia**, descartado.
+  - **Zumbido de la red eléctrica**: 60 Hz a **+9.0 dB sobre la banda de voz** y
+    su armónico de 120 Hz a **+13.8 dB**. (50 Hz a −12 dB: Panamá es 60 Hz.)
+    Se cuela por el cable del micrófono. El corte de graves de una sección solo
+    lo bajaba 6 dB.
+  - **Solución:** tipo de filtro `notch` nuevo (Q=24) en la red y sus dos
+    armónicos, más corte de graves de **4º orden a 90 Hz** (antes 2º a 80).
+    Medido sobre su señal real: 60 Hz pasa de +2.2 a −14.7 dB respecto a la voz
+    (17 dB menos), 120 Hz baja 6 dB, y **la banda de voz no se mueve** (0.3 dB).
+    Ajuste por micrófono: sin filtro / 50 Hz / 60 Hz. Se le dejó en 60.
+  - **Emitir en mono**: su fuente es un micrófono mono duplicado, así que en
+    estéreo se gasta la mitad del bitrate en codificar una copia. Medido a
+    128 kbps con ruido rosa: estéreo llega a **16.7 kHz** y mono a **20.2 kHz**,
+    mismo tamaño de archivo. Opción nueva `emitir_mono`, apagada de fábrica
+    (con música estéreo no conviene).
+  **Marca:** la aplicación pasa a llamarse **Filadelfia Broadcaster**, con
+  logotipo sobre la lista de reproducción. Basta con dejar `icono.png` en la
+  carpeta; el `.ico` multi-tamaño se genera solo al arrancar.
+  ⚠️ Tres pruebas dejaron de pasar al cambiar el corte de graves y al meter el
+  filtro de zumbido por defecto: **no eran fallos, eran expectativas viejas**
+  (medían el filtro de 2º orden a 80 Hz, y daban por "plano" un ecualizador que
+  ahora trae la muesca puesta). Actualizadas.
+  285 comprobaciones en verde. — Estado: ✅ — Siguiente: subir a GitHub.
 
 - [2026-08-24] **"No suena con calidad": era un defecto MÍO, medido y corregido.**
   El usuario dijo que el audio no sonaba bien pese a tener buen micrófono, y

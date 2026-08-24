@@ -36,7 +36,7 @@ import servidor
 import ventana_aire
 from estilo import Consejo, px
 
-TITULO = "Voz de Filadelfia - Estudio"
+TITULO = "Filadelfia Broadcaster"
 
 # como se llaman los protocolos en pantalla
 CORTINAS = 4          # cuantos botones de cortina hay
@@ -85,12 +85,8 @@ class App(tk.Tk):
         self.geometry("%dx%d" % (ancho, alto))
         self.minsize(min(px(940), ancho), min(px(600), alto))
         estilo.aplicar(self)
-        try:
-            ico = Path(__file__).with_name("icono.ico")
-            if ico.exists():
-                self.iconbitmap(str(ico))
-        except Exception:
-            pass
+        self.logo = None
+        self._preparar_icono()
 
         config.asegurar_carpetas()
 
@@ -122,6 +118,31 @@ class App(tk.Tk):
         self.after(60, self._tic_rapido)
         self.after(1000, self._tic_lento)
         self.after(300, self._primer_arranque)
+
+    def _preparar_icono(self):
+        """
+        Pone el icono de la aplicacion y deja una version pequena para el
+        cartel de la lista. Basta con dejar `icono.png` junto al programa: el
+        `.ico` que necesita Windows se genera solo la primera vez.
+        """
+        carpeta = Path(__file__).resolve().parent
+        png, ico = carpeta / "icono.png", carpeta / "icono.ico"
+        try:
+            if png.exists():
+                from PIL import Image, ImageTk
+                imagen = Image.open(png).convert("RGBA")
+                if not ico.exists() or ico.stat().st_mtime < png.stat().st_mtime:
+                    imagen.save(ico, format="ICO",
+                                sizes=[(16, 16), (32, 32), (48, 48), (64, 64),
+                                       (128, 128), (256, 256)])
+                lado = px(34)
+                chico = imagen.copy()
+                chico.thumbnail((lado, lado), Image.LANCZOS)
+                self.logo = ImageTk.PhotoImage(chico)
+            if ico.exists():
+                self.iconbitmap(str(ico))
+        except Exception:
+            self.logo = None          # sin icono se sigue trabajando igual
 
     # ---------------------------------------------------------------- menu
 
@@ -295,11 +316,19 @@ class App(tk.Tk):
         caja = ttk.Labelframe(padre, text=" LISTA DE REPRODUCCION ",
                               style="Caja.TLabelframe")
         caja.grid(row=0, column=0, sticky="nsew")
-        caja.rowconfigure(2, weight=1)
+        caja.rowconfigure(3, weight=1)
         caja.columnconfigure(0, weight=1)
 
+        marca = ttk.Frame(caja, style="Caja.TFrame")
+        marca.grid(row=0, column=0, sticky="ew", pady=(0, px(6)))
+        if self.logo is not None:
+            tk.Label(marca, image=self.logo, bg=estilo.PANEL,
+                     bd=0).pack(side="left", padx=(0, px(8)))
+        ttk.Label(marca, text=TITULO, style="Caja.TLabel",
+                  font=("Segoe UI Semibold", 13)).pack(side="left")
+
         herr = ttk.Frame(caja, style="Caja.TFrame")
-        herr.grid(row=0, column=0, sticky="ew", pady=(0, px(6)))
+        herr.grid(row=1, column=0, sticky="ew", pady=(0, px(6)))
         ttk.Button(herr, text="+ Archivos", style="Caja.TButton",
                    command=self.agregar_archivos).pack(side="left")
         ttk.Button(herr, text="+ Carpeta", style="Caja.TButton",
@@ -321,7 +350,7 @@ class App(tk.Tk):
                         command=self._aplicar_modo_lista).pack(side="right", padx=px(6))
 
         busca = ttk.Frame(caja, style="Caja.TFrame")
-        busca.grid(row=1, column=0, sticky="ew", pady=(0, px(6)))
+        busca.grid(row=2, column=0, sticky="ew", pady=(0, px(6)))
         ttk.Label(busca, text="Buscar:", style="CajaSuave.TLabel").pack(side="left")
         self.var_busca = tk.StringVar()
         e = ttk.Entry(busca, textvariable=self.var_busca)
@@ -329,7 +358,7 @@ class App(tk.Tk):
         e.bind("<KeyRelease>", lambda ev: self._filtrar())
 
         marco = ttk.Frame(caja, style="Caja.TFrame")
-        marco.grid(row=2, column=0, sticky="nsew")
+        marco.grid(row=3, column=0, sticky="nsew")
         marco.rowconfigure(0, weight=1)
         marco.columnconfigure(0, weight=1)
 
@@ -354,7 +383,7 @@ class App(tk.Tk):
         self.tabla.configure(yscrollcommand=sb.set)
 
         pie = ttk.Frame(caja, style="Caja.TFrame")
-        pie.grid(row=3, column=0, sticky="ew", pady=(px(6), 0))
+        pie.grid(row=4, column=0, sticky="ew", pady=(px(6), 0))
         self.lbl_lista = ttk.Label(pie, text="lista vacia", style="CajaSuave.TLabel")
         self.lbl_lista.pack(side="left")
         ttk.Button(pie, text="Guardar lista", style="Caja.TButton",
@@ -1412,8 +1441,18 @@ class DialogoConfig(tk.Toplevel):
         ttk.Combobox(cal, textvariable=self.var_codec, width=6, state="readonly",
                      values=("mp3", "aac")).pack(side="left")
 
+        self.var_mono = tk.BooleanVar(value=bool(config.get("emitir_mono")))
+        ttk.Checkbutton(f, text="Emitir en mono (mejor calidad al mismo bitrate "
+                                "si el programa es hablado)",
+                        variable=self.var_mono).grid(row=17, column=0,
+                                                     columnspan=2, sticky="w",
+                                                     pady=(px(4), 0))
+        ttk.Label(f, text="Medido a 128 kbps: en estereo llega a 16.7 kHz y en "
+                          "mono a 20.2 kHz.",
+                  style="Suave.TLabel").grid(row=18, column=0, columnspan=2,
+                                             sticky="w")
         ttk.Label(f, text="El plan contratado admite 128 kbps y 120 oyentes.",
-                  style="Suave.TLabel").grid(row=17, column=0, columnspan=2,
+                  style="Suave.TLabel").grid(row=19, column=0, columnspan=2,
                                              sticky="w", pady=(px(6), 0))
 
     def _pista_puerto(self):
@@ -1661,6 +1700,21 @@ class DialogoConfig(tk.Toplevel):
                   style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
                                              sticky="w", pady=(0, px(4)))
         fila += 1
+        ttk.Label(f, text="Quitar zumbido:").grid(row=fila, column=0, sticky="w",
+                                                  pady=px(2))
+        self.var_zumbido = tk.StringVar(value="60 Hz (America)")
+        cbz = ttk.Combobox(f, textvariable=self.var_zumbido, state="readonly",
+                           width=18,
+                           values=("No quitarlo", "50 Hz (Europa)",
+                                   "60 Hz (America)"))
+        cbz.grid(row=fila, column=1, sticky="w")
+        cbz.bind("<<ComboboxSelected>>", lambda e: self._guardar_compresor())
+        fila += 1
+        ttk.Label(f, text="El zumbido de la red electrica se cuela por el cable "
+                          "del microfono. Aqui se mide a 60 Hz.",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
+                                             sticky="w", pady=(0, px(4)))
+        fila += 1
 
         acciones = ttk.Frame(f)
         acciones.grid(row=fila, column=0, columnspan=3, sticky="ew", pady=px(6))
@@ -1676,6 +1730,8 @@ class DialogoConfig(tk.Toplevel):
         self.var_puerta.set(bool(micros[0].get("puerta", False)))
         self.var_puerta_umbral.set(float(micros[0].get("puerta_umbral", -45)))
         self.lbl_puerta.configure(text="%d dB" % int(micros[0].get("puerta_umbral", -45)))
+        self.var_zumbido.set({0: "No quitarlo", 50: "50 Hz (Europa)", 60: "60 Hz (America)"}.get(
+            int(micros[0].get("zumbido", 0) or 0), "No quitarlo"))
         ttk.Label(f, text="Consejo: enciende el monitor, abre el microfono y mueve las bandas mientras hablas.",
                   style="Suave.TLabel", justify="left").grid(
             row=fila, column=0, columnspan=3, sticky="w")
@@ -1689,11 +1745,14 @@ class DialogoConfig(tk.Toplevel):
         self.lbl_comp.configure(text="+%.0f dB" % makeup)
         umbral = round(float(self.var_puerta_umbral.get()))
         self.lbl_puerta.configure(text="%d dB" % umbral)
+        zumbido = {"No quitarlo": 0, "50 Hz (Europa)": 50,
+                   "60 Hz (America)": 60}.get(self.var_zumbido.get(), 0)
         if i < len(micros):
             micros[i]["comp"] = bool(self.var_comp.get())
             micros[i]["comp_makeup"] = makeup
             micros[i]["puerta"] = bool(self.var_puerta.get())
             micros[i]["puerta_umbral"] = umbral
+            micros[i]["zumbido"] = zumbido
             config.guardar_microfonos(micros)
             self.padre.mezclador.aplicar_ajustes()
 
@@ -1720,6 +1779,8 @@ class DialogoConfig(tk.Toplevel):
         self.var_puerta.set(bool(m.get("puerta", False)))
         self.var_puerta_umbral.set(float(m.get("puerta_umbral", -45)))
         self.lbl_puerta.configure(text="%d dB" % int(m.get("puerta_umbral", -45)))
+        self.var_zumbido.set({0: "No quitarlo", 50: "50 Hz (Europa)", 60: "60 Hz (America)"}.get(
+            int(m.get("zumbido", 0) or 0), "No quitarlo"))
         self._refrescar_eq()
 
     def _valores_eq(self):
@@ -1856,6 +1917,7 @@ class DialogoConfig(tk.Toplevel):
                               else "icecast")
         datos["bitrate"] = int(self.var_bitrate.get())
         datos["codec"] = self.var_codec.get()
+        datos["emitir_mono"] = self.var_mono.get()
 
         datos["monitor"] = self.var_monitor.get()
         datos["monitor_activo"] = self.var_mon_act.get()

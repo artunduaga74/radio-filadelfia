@@ -36,16 +36,22 @@ LIMITE_DB = 12.0        # tope por banda, arriba y abajo
 # Ajustes de fabrica. "A mi gusto" es el hueco del usuario.
 PRESETS = {
     "Plano": {
+        "zumbido": 0,
         "graves": 0, "medios": 0, "presencia": 0, "aire": 0, "corte_grave": True},
     "Voz clara": {
+        "zumbido": 0,
         "graves": -1, "medios": -3, "presencia": 4, "aire": 2, "corte_grave": True},
     "Voz calida": {
+        "zumbido": 0,
         "graves": 3, "medios": -1, "presencia": 1, "aire": -1, "corte_grave": True},
     "Radio (con cuerpo)": {
+        "zumbido": 0,
         "graves": 4, "medios": -3, "presencia": 3, "aire": 2, "corte_grave": True},
     "Menos ruido": {
+        "zumbido": 0,
         "graves": -4, "medios": -2, "presencia": 2, "aire": -3, "corte_grave": True},
     "A mi gusto": {
+        "zumbido": 0,
         "graves": 0, "medios": 0, "presencia": 0, "aire": 0, "corte_grave": True},
 }
 
@@ -79,6 +85,11 @@ def _biquad(tipo, f0, ganancia_db, Q, fs):
         a = [(A + 1) - (A - 1) * cos_w0 + raiz,
              2 * ((A - 1) - (A + 1) * cos_w0),
              (A + 1) - (A - 1) * cos_w0 - raiz]
+    elif tipo == "notch":
+        # muesca estrecha: se lleva por delante una frecuencia concreta y deja
+        # el resto intacto. Es el remedio clasico del zumbido de la red.
+        b = [1.0, -2 * cos_w0, 1.0]
+        a = [1 + alfa, -2 * cos_w0, 1 - alfa]
     elif tipo == "highpass":
         b = [(1 + cos_w0) / 2, -(1 + cos_w0), (1 + cos_w0) / 2]
         a = [1 + alfa, -2 * cos_w0, 1 - alfa]
@@ -118,7 +129,9 @@ class Ecualizador:
 
     def poner(self, clave, valor):
         """Cambia una banda (dB) o el corte grave (True/False)."""
-        if clave == "corte_grave":
+        if clave == "zumbido":
+            self.valores["zumbido"] = float(valor or 0)
+        elif clave == "corte_grave":
             self.valores["corte_grave"] = bool(valor)
         elif clave in self.valores:
             self.valores[clave] = max(-LIMITE_DB, min(LIMITE_DB, float(valor)))
@@ -129,7 +142,9 @@ class Ecualizador:
 
     def cargar(self, valores, preset=""):
         for k, v in (valores or {}).items():
-            if k == "corte_grave":
+            if k == "zumbido":
+                self.valores["zumbido"] = float(v or 0)
+            elif k == "corte_grave":
                 self.valores["corte_grave"] = bool(v)
             elif k in self.valores:
                 self.valores[k] = max(-LIMITE_DB, min(LIMITE_DB, float(v)))
@@ -142,7 +157,7 @@ class Ecualizador:
     @property
     def plano(self):
         """True si no esta tocando nada (asi nos ahorramos el filtrado)."""
-        if self.valores.get("corte_grave"):
+        if self.valores.get("corte_grave") or self.valores.get("zumbido"):
             return False
         return all(abs(float(self.valores.get(c, 0))) < 0.05
                    for c, _, _, _, _ in BANDAS)
@@ -152,7 +167,18 @@ class Ecualizador:
     def _recalcular(self):
         secciones = []
         if self.valores.get("corte_grave"):
-            secciones.append(_biquad("highpass", 80.0, 0.0, 0.707, self.muestreo))
+            # DOS secciones, no una: con una sola (12 dB por octava) el zumbido
+            # de 60 Hz apenas bajaba 6 dB. Con dos son 24 dB por octava.
+            secciones.append(_biquad("highpass", 90.0, 0.0, 0.54, self.muestreo))
+            secciones.append(_biquad("highpass", 90.0, 0.0, 1.31, self.muestreo))
+        red = float(self.valores.get("zumbido", 0) or 0)
+        if red > 0:
+            # la red y sus dos primeros armonicos, que suelen ser los que suenan
+            for k in (1, 2, 3):
+                f0 = red * k
+                if f0 < self.muestreo / 2.2:
+                    secciones.append(_biquad("notch", f0, 0.0, 24.0,
+                                             self.muestreo))
         for clave, _, frec, tipo, Q in BANDAS:
             g = float(self.valores.get(clave, 0.0))
             if abs(g) < 0.05:

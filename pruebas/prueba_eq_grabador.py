@@ -106,10 +106,12 @@ print("\n=== 2. El corte de graves quita el retumbe ===")
 solo_corte = {"graves": 0, "medios": 0, "presencia": 0, "aire": 0,
               "corte_grave": True}
 g40 = ganancia_en(40, solo_corte)
-g80 = ganancia_en(80, solo_corte)
+g90 = ganancia_en(90, solo_corte)
 g1k = ganancia_en(1000, solo_corte)
-check("a 40 Hz recorta fuerte", g40 < -9, "%+.1f dB" % g40)
-check("a 80 Hz esta el punto de -3 dB", abs(g80 + 3.0) < 1.0, "%+.1f dB" % g80)
+# ahora son DOS secciones (24 dB por octava) con la esquina en 90 Hz: hacia
+# falta para tumbar el zumbido de 60 Hz, que con una sola apenas bajaba 6 dB
+check("a 40 Hz recorta mucho", g40 < -20, "%+.1f dB" % g40)
+check("a 90 Hz esta el punto de -3 dB", abs(g90 + 3.0) < 1.5, "%+.1f dB" % g90)
 check("a 1 kHz no toca nada", abs(g1k) < 0.3, "%+.1f dB" % g1k)
 
 print("\n=== 3. Sin chasquidos entre bloques ===")
@@ -215,6 +217,7 @@ check("y carga el ajuste guardado", not m2.eq.plano)
 micros = config.microfonos()
 micros[0]["eq"] = {"graves": 0, "medios": 0, "presencia": 0, "aire": 0,
                    "corte_grave": False}
+micros[0]["zumbido"] = 0          # sin filtro de red, para que quede plano
 config.guardar_microfonos(micros)
 m2.aplicar_ajustes()
 check("los cambios llegan en caliente", m2.eq.plano)
@@ -345,6 +348,73 @@ d_ruido = por_la_puerta(ruido)
 d_voz = por_la_puerta(voz)
 check("baja el ruido de la sala", d_ruido < -8, "%+.1f dB" % d_ruido)
 check("y deja la voz intacta", abs(d_voz) < 0.5, "%+.1f dB" % d_voz)
+
+print("")
+print("=== 16. Quitar el zumbido de la red electrica ===")
+
+def energia_en(x, hz, ancho=3.0, fs=FS):
+    X = np.abs(np.fft.rfft(x[:, 0] * np.hanning(len(x))))
+    f = np.fft.rfftfreq(len(x), 1.0 / fs)
+    m_ = (f > hz - ancho) & (f < hz + ancho)
+    return 20 * np.log10(max(X[m_].max(), 1e-9))
+
+# una voz con zumbido de 60 Hz y su armonico de 120, como el del usuario
+t = np.arange(FS) / FS
+voz = 0.25 * np.sin(2 * np.pi * 800 * t)
+zumbido = 0.10 * np.sin(2 * np.pi * 60 * t) + 0.10 * np.sin(2 * np.pi * 120 * t)
+sucia = np.column_stack([voz + zumbido] * 2).astype(np.float32)
+
+def por_eq(valores):
+    e = mod_eq.Ecualizador(FS)
+    e.cargar(valores)
+    return np.concatenate([e.procesar(sucia[i:i + 1024].copy())
+                           for i in range(0, len(sucia) - 1024, 1024)])
+
+base = {"graves": 0, "medios": 0, "presencia": 0, "aire": 0}
+sin_nada = por_eq(dict(base, corte_grave=False, zumbido=0))
+con_todo = por_eq(dict(base, corte_grave=True, zumbido=60))
+
+for hz in (60, 120):
+    antes_ = energia_en(sin_nada, hz)
+    despues = energia_en(con_todo, hz)
+    check("baja el zumbido de %d Hz" % hz, (antes_ - despues) > 20,
+          "%.0f dB menos" % (antes_ - despues))
+v_antes = energia_en(sin_nada, 800)
+v_despues = energia_en(con_todo, 800)
+check("y NO toca la voz", abs(v_antes - v_despues) < 1.0,
+      "%+.2f dB" % (v_despues - v_antes))
+
+solo_50 = por_eq(dict(base, corte_grave=False, zumbido=50))
+check("elegir 50 Hz no toca el de 60",
+      abs(energia_en(sin_nada, 60) - energia_en(solo_50, 60)) < 3.0,
+      "%+.1f dB" % (energia_en(solo_50, 60) - energia_en(sin_nada, 60)))
+
+print("")
+print("=== 17. El corte de graves, ahora mas empinado ===")
+e = mod_eq.Ecualizador(FS)
+e.cargar(dict(base, corte_grave=True, zumbido=0))
+curva = dict(mod_eq.respuesta(dict(base, corte_grave=True, zumbido=0), FS, 200))
+def db_en(hz):
+    cerca = min(curva, key=lambda f: abs(f - hz))
+    return curva[cerca]
+check("a 60 Hz recorta de verdad", db_en(60) < -12, "%.1f dB" % db_en(60))
+check("a 40 Hz aun mas", db_en(40) < -25, "%.1f dB" % db_en(40))
+check("a 200 Hz ya casi no toca", abs(db_en(200)) < 2.0, "%.1f dB" % db_en(200))
+check("y a 1 kHz nada", abs(db_en(1000)) < 0.5, "%.1f dB" % db_en(1000))
+
+print("")
+print("=== 18. Emitir en mono (mejor calidad al mismo bitrate) ===")
+import emisor as mod_emisor
+config.guardar({"emitir_mono": False})
+cmd = mod_emisor.construir_comando(a_tuberia=True)
+i_ar = cmd.index("-ar", cmd.index("libmp3lame"))
+check("de serie va en estereo", cmd[i_ar + 2] == "-ac" and cmd[i_ar + 3] == "2",
+      cmd[i_ar + 3])
+config.guardar({"emitir_mono": True})
+cmd = mod_emisor.construir_comando(a_tuberia=True)
+i_ar = cmd.index("-ar", cmd.index("libmp3lame"))
+check("se puede pedir mono", cmd[i_ar + 3] == "1", cmd[i_ar + 3])
+config.guardar({"emitir_mono": False})
 
 print("\n" + "=" * 62)
 print("  %d comprobaciones OK, %d fallos" % (ok, len(fallos)))

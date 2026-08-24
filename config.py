@@ -53,6 +53,10 @@ DEFECTOS = {
     "muestreo": 48000,          # reloj interno del mezclador (WASAPI usa 48k)
     "muestreo_salida": 44100,   # lo que espera el DNAS (informó icy-sr:44100)
     "canales": 2,
+    # Emitir en mono: la fuente es una voz (un microfono mono duplicado), asi
+    # que en estereo se gasta la mitad del bitrate en codificar una copia.
+    # Medido a 128 kbps: estereo llega a 16.7 kHz y mono a 20.2 kHz.
+    "emitir_mono": False,
     "codec": "mp3",             # "mp3" | "aac"
 
     # --- identidad de la señal
@@ -67,13 +71,13 @@ DEFECTOS = {
     "microfonos": [
         {"nombre": "Micro 1", "dispositivo": "", "volumen": 1.0,
          "comp": True, "comp_umbral": -26, "comp_relacion": 4, "comp_makeup": 8,
-         "puerta": False, "puerta_umbral": -45,
+         "puerta": False, "puerta_umbral": -45, "zumbido": 60,
          "eq_preset": "Voz clara",
          "eq": {"graves": -1, "medios": -3, "presencia": 4, "aire": 2,
                 "corte_grave": True}},
         {"nombre": "Invitado", "dispositivo": "", "volumen": 1.0,
          "comp": True, "comp_umbral": -26, "comp_relacion": 4, "comp_makeup": 8,
-         "puerta": False, "puerta_umbral": -45,
+         "puerta": False, "puerta_umbral": -45, "zumbido": 60,
          "eq_preset": "Voz clara",
          "eq": {"graves": -1, "medios": -3, "presencia": 4, "aire": 2,
                 "corte_grave": True}},
@@ -267,6 +271,7 @@ def microfonos():
             "comp_makeup": float(m.get("comp_makeup", 8)),
             "puerta": bool(m.get("puerta", False)),
             "puerta_umbral": float(m.get("puerta_umbral", -45)),
+            "zumbido": float(m.get("zumbido", 0) or 0),
             "eq_preset": m.get("eq_preset") or "Plano",
             "eq": dict(m.get("eq") or {}),
         })
