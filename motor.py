@@ -53,6 +53,10 @@ class CanalMicro:
             relacion=float(ajustes.get("comp_relacion", 4)),
             makeup_db=float(ajustes.get("comp_makeup", 8)),
             activo=bool(ajustes.get("comp", True)))
+        self.puerta = mod_eq.Puerta(
+            muestreo,
+            umbral_db=float(ajustes.get("puerta_umbral", -45)),
+            activo=bool(ajustes.get("puerta", False)))
         self.abierto = False
         self.nivel = -60.0
 
@@ -74,6 +78,10 @@ class CanalMicro:
             self.nivel = -60.0
             return None
         bloque = self.micro.leer(cuadros)
+        # el orden importa: primero se calla el ruido de fondo, luego se
+        # ecualiza y por ultimo se nivela. Al reves, el compresor levantaria
+        # el ruido y la puerta ya no sabria distinguirlo de la voz.
+        bloque = self.puerta.procesar(bloque)
         if not self.eq.plano:
             bloque = self.eq.procesar(bloque)
         # el compresor va ANTES del fader: su umbral es absoluto, asi que debe
@@ -107,6 +115,7 @@ class Mezclador:
         self.proteccion_acople = bool(config.get("proteccion_acople", True))
         self.acople = False               # se ha detectado realimentacion
         self.aviso_monitor = ""
+        self.limitador = mod_eq.Limitador(self.muestreo)
         self._monitor_puesto = config.get("monitor") or ""
         self._apretado_desde = 0.0        # cuanto lleva el limitador sufriendo
 
@@ -228,6 +237,7 @@ class Mezclador:
                 s.close()
             except Exception:
                 pass
+        self.limitador = mod_eq.Limitador(self.muestreo)
         self._monitor_puesto = config.get("monitor") or ""
         self.monitor_activo = bool(config.get("monitor_activo", True))
         if not self.monitor_activo:
@@ -418,7 +428,8 @@ class Mezclador:
         efectos = efectos * self.vol_efectos
 
         mezcla = mic + musica + efectos
-        mezcla, reduccion = self._limitar(mezcla)
+        mezcla = self.limitador.procesar(mezcla)
+        reduccion = self.limitador.reduccion
 
         self.niveles = {
             "micro": audio.nivel(mic),
@@ -439,16 +450,9 @@ class Mezclador:
         return actual + (objetivo - actual) / pasos
 
     def _limitar(self, bloque):
-        """
-        Techo de seguridad: si la suma se pasa de 1.0 se baja todo el bloque
-        en proporcion. No es un compresor de radio, es un seguro contra la
-        distorsion, que es lo unico imperdonable al aire.
-        """
-        pico = float(np.max(np.abs(bloque))) if len(bloque) else 0.0
-        if pico <= 0.97:
-            return bloque, 0.0
-        factor = 0.97 / pico
-        return bloque * factor, 20.0 * np.log10(factor)
+        """Compatibilidad: el limitador de verdad esta en eq.Limitador."""
+        salida = self.limitador.procesar(bloque)
+        return salida, self.limitador.reduccion
 
     # ------------------------------------------------------------ ajustes en caliente
 
@@ -471,5 +475,7 @@ class Mezclador:
                            relacion=aj.get("comp_relacion"),
                            makeup_db=aj.get("comp_makeup"),
                            activo=aj.get("comp"))
+            c.puerta.ajustar(umbral_db=aj.get("puerta_umbral"),
+                             activo=aj.get("puerta"))
             c.eq.activo = activo
             c.eq.cargar(aj.get("eq") or {}, aj.get("eq_preset", "Plano"))

@@ -19,6 +19,7 @@ estado entre bloques para que no haya chasquidos en las costuras.
 
 import numpy as np
 from scipy import signal
+from scipy.ndimage import minimum_filter1d
 
 CANALES = 2
 
@@ -251,7 +252,7 @@ class Compresor:
             mono = np.max(np.abs(bloque), axis=1).astype(np.float64)
             # envolvente: filtro de un polo, con estado entre bloques
             if self._zi is None:
-                self._zi = np.array([mono[0] * (1.0 - self._a)])
+                self._zi = np.array([mono[0] * self._a])
             env, self._zi = signal.lfilter([1.0 - self._a], [1.0, -self._a],
                                            mono, zi=self._zi)
             env_db = 20.0 * np.log10(np.maximum(env, 1e-7))
@@ -279,3 +280,121 @@ def db_a_ganancia(db):
     if d <= -40.0:
         return 0.0
     return float(np.power(10.0, d / 20.0))
+
+
+# ------------------------------------------------------------------ limitador
+
+class Limitador:
+    """
+    Techo de seguridad que NO se oye.
+
+    Dos intentos hicieron falta. El primero calculaba un factor por bloque y lo
+    aplicaba entero: cada 21 ms la onda daba un escalon siete veces mayor que
+    su pendiente natural. El segundo suavizo la ganancia, pero al suavizarla
+    tambien la RETRASABA: el pico ya habia pasado cuando bajaba el volumen, se
+    escapaba por encima del techo y habia que recortarlo a lo bruto (3.7 % de
+    distorsion medida).
+
+    Este mira hacia delante, que es como se hace de verdad. El audio se retrasa
+    unos milisegundos y la ganancia se calcula con el minimo de esa ventana:
+    cuando el pico llega, el volumen YA esta bajado. Asi no hay que recortar
+    nada, no hay escalones y no se oye trabajar.
+    """
+
+    def __init__(self, muestreo=48000, techo=0.97, mirada_ms=3.0,
+                 salida_ms=150.0):
+        self.muestreo = int(muestreo)
+        self.techo = float(techo)
+        self.reduccion = 0.0
+        self.mira = max(8, int(self.muestreo * mirada_ms / 1000.0))
+        a = np.exp(-1.0 / (max(0.001, salida_ms / 1000.0) * self.muestreo))
+        self._b, self._a = [1.0 - a], [1.0, -a]
+        self._zi = None
+        self._cola = None          # las muestras retrasadas del bloque anterior
+
+    def reiniciar(self):
+        self._zi = None
+        self._cola = None
+
+    def procesar(self, bloque):
+        if bloque is None or not len(bloque):
+            self.reduccion = 0.0
+            return bloque
+        try:
+            canales = bloque.shape[1]
+            if self._cola is None:
+                self._cola = np.zeros((self.mira, canales), dtype=np.float32)
+
+            # lo que sale ahora es lo que entro hace `mira` muestras
+            juntos = np.concatenate([self._cola, bloque])
+            self._cola = bloque[-self.mira:].copy()
+
+            env = np.max(np.abs(juntos), axis=1).astype(np.float64)
+            pedida = np.minimum(1.0, self.techo / np.maximum(env, 1e-9))
+
+            # el minimo de la ventana que viene: bajar ANTES de que llegue
+            adelantada = minimum_filter1d(pedida, size=self.mira * 2 + 1,
+                                          mode="nearest")[:len(bloque)]
+
+            # la vuelta al volumen normal, despacio; la bajada, inmediata
+            if self._zi is None:
+                self._zi = np.array([adelantada[0] * -self._a[1]])
+            lenta, self._zi = signal.lfilter(self._b, self._a, adelantada,
+                                             zi=self._zi)
+            ganancia = np.minimum(adelantada, lenta)
+
+            menor = float(np.min(ganancia))
+            self.reduccion = 20.0 * np.log10(menor) if menor < 0.999 else 0.0
+            salida = juntos[:len(bloque)] * ganancia[:, None]
+            return salida.astype(np.float32)
+        except Exception:
+            self.reduccion = 0.0
+            return np.clip(bloque, -1.0, 1.0)
+
+
+class Puerta:
+    """
+    Puerta de ruido: calla el microfono entre frases.
+
+    Con un microfono lejano hay que amplificar mucho, y entonces el ruido de la
+    sala (ventilador, calle, el propio equipo) sube igual que la voz y se cuela
+    al aire en cuanto uno deja de hablar. La puerta lo baja cuando no hay voz y
+    lo abre en cuanto la hay.
+    """
+
+    def __init__(self, muestreo=48000, umbral_db=-45.0, reduccion_db=-18.0,
+                 activo=False, salida_ms=180.0):
+        self.muestreo = int(muestreo)
+        self.umbral_db = float(umbral_db)
+        self.reduccion_db = float(reduccion_db)
+        self.activo = bool(activo)
+        self.abierta = False
+        a = np.exp(-1.0 / (max(0.001, salida_ms / 1000.0) * self.muestreo))
+        self._b, self._a = [1.0 - a], [1.0, -a]
+        self._zi = None
+
+    def ajustar(self, umbral_db=None, activo=None, reduccion_db=None):
+        if umbral_db is not None:
+            self.umbral_db = float(umbral_db)
+        if reduccion_db is not None:
+            self.reduccion_db = float(reduccion_db)
+        if activo is not None:
+            self.activo = bool(activo)
+
+    def procesar(self, bloque):
+        if not self.activo or bloque is None or not len(bloque):
+            return bloque
+        try:
+            env = np.max(np.abs(bloque), axis=1).astype(np.float64)
+            env_db = 20.0 * np.log10(np.maximum(env, 1e-7))
+            objetivo = np.where(env_db > self.umbral_db, 1.0,
+                                np.power(10.0, self.reduccion_db / 20.0))
+            if self._zi is None:
+                self._zi = np.array([objetivo[0] * -self._a[1]])
+            # abre de golpe (maximo) y cierra despacio, para no cortar palabras
+            lenta, self._zi = signal.lfilter(self._b, self._a, objetivo, zi=self._zi)
+            ganancia = np.maximum(objetivo, lenta)
+            self.abierta = bool(np.max(objetivo) >= 1.0)
+            return (bloque * ganancia[:, None]).astype(np.float32)
+        except Exception:
+            return bloque

@@ -67,11 +67,13 @@ DEFECTOS = {
     "microfonos": [
         {"nombre": "Micro 1", "dispositivo": "", "volumen": 1.0,
          "comp": True, "comp_umbral": -26, "comp_relacion": 4, "comp_makeup": 8,
+         "puerta": False, "puerta_umbral": -45,
          "eq_preset": "Voz clara",
          "eq": {"graves": -1, "medios": -3, "presencia": 4, "aire": 2,
                 "corte_grave": True}},
         {"nombre": "Invitado", "dispositivo": "", "volumen": 1.0,
          "comp": True, "comp_umbral": -26, "comp_relacion": 4, "comp_makeup": 8,
+         "puerta": False, "puerta_umbral": -45,
          "eq_preset": "Voz clara",
          "eq": {"graves": -1, "medios": -3, "presencia": 4, "aire": 2,
                 "corte_grave": True}},
@@ -263,6 +265,8 @@ def microfonos():
             "comp_umbral": float(m.get("comp_umbral", -26)),
             "comp_relacion": float(m.get("comp_relacion", 4)),
             "comp_makeup": float(m.get("comp_makeup", 8)),
+            "puerta": bool(m.get("puerta", False)),
+            "puerta_umbral": float(m.get("puerta_umbral", -45)),
             "eq_preset": m.get("eq_preset") or "Plano",
             "eq": dict(m.get("eq") or {}),
         })

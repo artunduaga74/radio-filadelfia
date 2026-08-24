@@ -102,11 +102,11 @@ config.py          ajustes PORTABLES (junto a la app) + credenciales aparte
 estilo.py          tema, px() para DPI, Vumetro y Grafico propios
 procesos.py        job object de Windows: ningún ffmpeg sobrevive a la app
 prueba_conexion.py busca solo el puerto y la forma de clave correctos
-eq.py              ecualizador de voz (biquads + scipy) y compresor nivelador
+eq.py              cadena de voz: ecualizador, compresor, puerta y limitador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           265 comprobaciones automáticas
+pruebas/           275 comprobaciones automáticas
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -178,6 +178,41 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **"No suena con calidad": era un defecto MÍO, medido y corregido.**
+  El usuario dijo que el audio no sonaba bien pese a tener buen micrófono, y
+  pidió mirar código de otros programas. Antes de importar nada, se midió la
+  cadena. **La captura estaba sana** (0.3 % de bloques perdidos, 48 kHz
+  nativos, mono duplicado bien): el problema estaba en el procesado.
+  **El defecto:** `_limitar` calculaba un factor por bloque y lo aplicaba
+  entero. Medido con una señal que lo hace trabajar: **salto de 0.1450 en la
+  costura entre bloques, siete veces mayor que la pendiente natural de la onda
+  (0.0210)**, y recortando en 68 de 93 bloques. Eso es un chasquido cada 21 ms.
+  **La corrección costó tres intentos, todos medidos:**
+  1. Suavizar la ganancia → PEOR: el suavizado la retrasaba, el pico se
+     escapaba por encima del techo (1.0000) y había que recortarlo a lo bruto.
+     Distorsión 0.22 % → 3.74 %.
+  2. Con **mirada adelante** (el audio se retrasa 3 ms y la ganancia se toma
+     del mínimo de esa ventana, con `minimum_filter1d`): salto 0.0283,
+     distorsión 0.05 %, pico exacto 0.9700 y nunca por encima.
+  3. Las pruebas cazaron un tercer fallo: **el estado inicial del filtro de un
+     polo estaba mal** (`(1-a)*x` en vez de `a*x`), así que los primeros 150 ms
+     salían casi mudos cada vez que arrancaba. Afectaba también al compresor y
+     a la puerta. Corregido en los tres.
+  **Añadido `eq.Puerta`** (puerta de ruido, por micrófono, opcional): baja la
+  sala 11.6 dB sin tocar la voz. Necesaria ahora que se puede amplificar +24 dB.
+  **Orden de la cadena de voz:** puerta → ecualizador → compresor → volumen.
+  Al revés, el compresor levantaría el ruido y la puerta ya no sabría
+  distinguirlo de la voz.
+  ⚠️ **Sobre copiar de otros programas:** no se copió código. BUTT, Mixxx,
+  Audacity y Liquidsoap son GPL, y meter su código aquí le impondría esa
+  licencia al proyecto. Lo que se hizo fue implementar las técnicas estándar
+  (biquads del recetario de Bristow-Johnson, limitador de mirada adelante,
+  compresor y puerta feed-forward), que son práctica de ingeniería documentada,
+  no código de nadie.
+  275 comprobaciones en verde, con las medidas de calidad clavadas como prueba
+  de no regresión. — Estado: ✅ — Siguiente: que lo escuche; sigue sin subir a
+  GitHub.
 
 - [2026-08-24] **Seis mejoras de uso pedidas por el usuario.**
   **(1) La barra espaciadora "no funcionaba": no era un bug.** Su `ajustes.json`

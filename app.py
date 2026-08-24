@@ -1641,6 +1641,26 @@ class DialogoConfig(tk.Toplevel):
                   style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
                                              sticky="w", pady=(0, px(4)))
         fila += 1
+        self.var_puerta = tk.BooleanVar(value=False)
+        ttk.Checkbutton(f, text="Callar el ruido de la sala entre frases",
+                        variable=self.var_puerta,
+                        command=self._guardar_compresor).grid(
+            row=fila, column=0, columnspan=3, sticky="w")
+        fila += 1
+        ttk.Label(f, text="Desde:").grid(row=fila, column=0, sticky="w", pady=px(2))
+        self.var_puerta_umbral = tk.DoubleVar(value=-45.0)
+        ttk.Scale(f, from_=-60, to=-25, variable=self.var_puerta_umbral,
+                  length=px(210),
+                  command=lambda v: self._guardar_compresor()).grid(
+            row=fila, column=1, sticky="w")
+        self.lbl_puerta = ttk.Label(f, text="", width=7, style="Suave.TLabel")
+        self.lbl_puerta.grid(row=fila, column=2, sticky="w")
+        fila += 1
+        ttk.Label(f, text="Util si amplificas mucho: sin esto, el ventilador y "
+                          "la calle salen al aire cuando callas.",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
+                                             sticky="w", pady=(0, px(4)))
+        fila += 1
 
         acciones = ttk.Frame(f)
         acciones.grid(row=fila, column=0, columnspan=3, sticky="ew", pady=px(6))
@@ -1653,6 +1673,9 @@ class DialogoConfig(tk.Toplevel):
         self.var_comp.set(bool(micros[0].get("comp", True)))
         self.var_comp_makeup.set(float(micros[0].get("comp_makeup", 8)))
         self.lbl_comp.configure(text="+%.0f dB" % float(micros[0].get("comp_makeup", 8)))
+        self.var_puerta.set(bool(micros[0].get("puerta", False)))
+        self.var_puerta_umbral.set(float(micros[0].get("puerta_umbral", -45)))
+        self.lbl_puerta.configure(text="%d dB" % int(micros[0].get("puerta_umbral", -45)))
         ttk.Label(f, text="Consejo: enciende el monitor, abre el microfono y mueve las bandas mientras hablas.",
                   style="Suave.TLabel", justify="left").grid(
             row=fila, column=0, columnspan=3, sticky="w")
@@ -1664,9 +1687,13 @@ class DialogoConfig(tk.Toplevel):
         i = self._indice_eq()
         makeup = round(float(self.var_comp_makeup.get()), 1)
         self.lbl_comp.configure(text="+%.0f dB" % makeup)
+        umbral = round(float(self.var_puerta_umbral.get()))
+        self.lbl_puerta.configure(text="%d dB" % umbral)
         if i < len(micros):
             micros[i]["comp"] = bool(self.var_comp.get())
             micros[i]["comp_makeup"] = makeup
+            micros[i]["puerta"] = bool(self.var_puerta.get())
+            micros[i]["puerta_umbral"] = umbral
             config.guardar_microfonos(micros)
             self.padre.mezclador.aplicar_ajustes()
 
@@ -1690,6 +1717,9 @@ class DialogoConfig(tk.Toplevel):
         self.var_comp.set(bool(m.get("comp", True)))
         self.var_comp_makeup.set(float(m.get("comp_makeup", 8)))
         self.lbl_comp.configure(text="+%.0f dB" % float(m.get("comp_makeup", 8)))
+        self.var_puerta.set(bool(m.get("puerta", False)))
+        self.var_puerta_umbral.set(float(m.get("puerta_umbral", -45)))
+        self.lbl_puerta.configure(text="%d dB" % int(m.get("puerta_umbral", -45)))
         self._refrescar_eq()
 
     def _valores_eq(self):

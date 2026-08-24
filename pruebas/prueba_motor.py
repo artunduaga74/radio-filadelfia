@@ -172,9 +172,20 @@ limitado, red = m3._limitar(fuerte)
 check("recorta el pico a 0.97", abs(float(np.max(np.abs(limitado))) - 0.97) < 0.001,
       "pico=%.3f" % float(np.max(np.abs(limitado))))
 check("informa la reduccion", red < -9, "%.1f dB" % red)
+# Un audio que no satura debe salir con el MISMO nivel. No se compara muestra
+# a muestra porque el limitador retrasa unos milisegundos el audio: mira hacia
+# delante para bajar el volumen ANTES de que llegue el pico.
+m4 = motor.Mezclador(emisor=None)
 suave = np.full((1024, 2), 0.5, dtype=np.float32)
-igual, red2 = m3._limitar(suave)
-check("no toca lo que no satura", np.allclose(igual, suave) and red2 == 0.0)
+for _ in range(3):
+    igual = m4.limitador.procesar(suave.copy())
+red2 = m4.limitador.reduccion
+check("no toca lo que no satura",
+      abs(float(np.max(np.abs(igual))) - 0.5) < 0.001 and red2 == 0.0,
+      "pico %.3f, reduccion %.1f dB" % (float(np.max(np.abs(igual))), red2))
+check("el retraso que introduce es minimo",
+      m4.limitador.mira / 48000.0 < 0.005,
+      "%.1f ms" % (1000.0 * m4.limitador.mira / 48000.0))
 
 print("\n=== 8. El emisor nunca se queda sin audio ===")
 import emisor as mod_emisor

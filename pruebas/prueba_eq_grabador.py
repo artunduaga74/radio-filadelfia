@@ -277,6 +277,75 @@ config.guardar_microfonos(micros)
 m3.aplicar_ajustes()
 check("se puede encender en caliente", m3.canales[1].comp.activo)
 
+print("")
+print("=== 13. Calidad del limitador (lo que sonaba mal) ===")
+
+def costura(bloques):
+    """El salto de una muestra a la siguiente EN LA UNION de dos bloques."""
+    return max(abs(float(bloques[i][0, 0] - bloques[i - 1][-1, 0]))
+               for i in range(1, len(bloques)))
+
+def distorsion(x, hz=220.0):
+    X = np.abs(np.fft.rfft(x * np.hanning(len(x))))
+    f = np.fft.rfftfreq(len(x), 1.0 / FS)
+    fund = X[(f > hz - 20) & (f < hz + 20)].max()
+    arm = sum((X[(f > hz * k - 20) & (f < hz * k + 20)].max()) ** 2
+              for k in (2, 3, 4, 5))
+    return 100.0 * np.sqrt(arm) / max(fund, 1e-9)
+
+# una senal que le hace trabajar de verdad: sube y baja como una voz
+t = np.arange(FS * 2) / FS
+envol = 0.5 + 0.9 * np.abs(np.sin(2 * np.pi * 2.0 * t))
+onda = (envol * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+senal = np.column_stack([onda, onda])
+
+lim = mod_eq.Limitador(FS)
+bloques = [lim.procesar(senal[i:i + 1024].copy())
+           for i in range(0, len(senal) - 1024, 1024)]
+sal = np.concatenate(bloques)
+
+salto = costura(bloques)
+thd = distorsion(sal[FS // 2:FS // 2 + 16384, 0])
+pico = float(np.max(np.abs(sal)))
+check("no deja escalones en las uniones de bloque", salto < 0.05,
+      "salto %.4f (con el limitador viejo era 0.1450)" % salto)
+check("casi no distorsiona", thd < 0.5, "%.2f %% (el viejo, 0.22 %%)" % thd)
+check("NUNCA se pasa del techo", pico <= 0.9701, "pico %.4f" % pico)
+check("y aprovecha el techo", pico > 0.9, "pico %.4f" % pico)
+
+print("")
+print("=== 14. Arranque: nada de mudez al empezar ===")
+t1 = np.arange(1024) / FS
+tono = np.column_stack([0.5 * np.sin(2 * np.pi * 220 * t1)] * 2).astype(np.float32)
+for nombre, obj in (("limitador", mod_eq.Limitador(FS)),
+                    ("puerta", mod_eq.Puerta(FS, activo=True)),
+                    ("compresor", mod_eq.Compresor(FS, activo=True))):
+    salida = obj.procesar(tono.copy())
+    mitad = len(salida) // 2
+    ent = np.sqrt(np.mean(tono[mitad:, 0] ** 2))
+    fin = np.sqrt(np.mean(salida[mitad:, 0] ** 2))
+    db = 20 * np.log10(max(fin, 1e-9) / ent)
+    check("%s: el primer bloque sale entero" % nombre, db > -3.0,
+          "%+.1f dB" % db)
+
+print("")
+print("=== 15. La puerta calla la sala, no la voz ===")
+def por_la_puerta(x, umbral=-45):
+    g = mod_eq.Puerta(FS, umbral_db=umbral, reduccion_db=-18, activo=True)
+    b = np.column_stack([x, x])
+    o = np.concatenate([g.procesar(b[i:i + 1024]) for i in range(0, len(x) - 1024, 1024)])
+    m_ = len(o) // 2
+    ent = 20 * np.log10(max(np.sqrt(np.mean(b[m_:, 0] ** 2)), 1e-9))
+    fin = 20 * np.log10(max(np.sqrt(np.mean(o[m_:, 0] ** 2)), 1e-9))
+    return fin - ent
+
+ruido = (0.002 * np.random.randn(FS)).astype(np.float32)
+voz = (0.3 * np.sin(2 * np.pi * 200 * np.arange(FS) / FS)).astype(np.float32)
+d_ruido = por_la_puerta(ruido)
+d_voz = por_la_puerta(voz)
+check("baja el ruido de la sala", d_ruido < -8, "%+.1f dB" % d_ruido)
+check("y deja la voz intacta", abs(d_voz) < 0.5, "%+.1f dB" % d_voz)
+
 print("\n" + "=" * 62)
 print("  %d comprobaciones OK, %d fallos" % (ok, len(fallos)))
 if fallos:
