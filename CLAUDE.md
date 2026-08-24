@@ -102,11 +102,11 @@ config.py          ajustes PORTABLES (junto a la app) + credenciales aparte
 estilo.py          tema, px() para DPI, Vumetro y Grafico propios
 procesos.py        job object de Windows: ningún ffmpeg sobrevive a la app
 prueba_conexion.py busca solo el puerto y la forma de clave correctos
-eq.py              ecualizador de voz (biquads + scipy), con ajustes de fábrica
+eq.py              ecualizador de voz (biquads + scipy) y compresor nivelador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           233 comprobaciones automáticas
+pruebas/           265 comprobaciones automáticas
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -158,8 +158,8 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
 ## 6. Estado y qué sigue
 
 **Hecho y probado (2026-08-24):** los 11 módulos, **94 comprobaciones en
-verde** (52 del motor, 39 del emisor/ICY, 34 del ecualizador y el grabador, 13 del
-monitor de aire, 95 de la ventana). Todo lo de audio se mide: dB reales, no "parece que suena".
+verde** (52 del motor, 39 del emisor/ICY, 49 del ecualizador/compresor/grabador, 13
+del monitor de aire, 112 de la ventana). Todo lo de audio se mide: dB reales, no "parece que suena".
 
 **⛔ GATE PENDIENTE — lo único que falta para darlo por bueno:** el usuario debe
 correr `python prueba_conexion.py` con su usuario y clave de DJ. **Nunca se ha
@@ -171,7 +171,6 @@ gate pase, no dar por funcionando la emisión.
 - Programación por horarios (parrilla) — ojo: el 24/7 conviene dejarlo en el
   servidor; la app solo toma el aire en vivo.
 - Cartwall más grande que 4 cortinas.
-- Compresor de voz (el ecualizador ya está; falta el control de dinámica).
 - Procesado tipo radio (compresor multibanda). Con `loudnorm`/`compand` se
   llega al 70-80 %; al 100 % no (eso es Stereo Tool/Omnia).
 - Integrar los MP3 que genera la skill `audio-emisora`.
@@ -179,6 +178,35 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **Seis mejoras de uso pedidas por el usuario.**
+  **(1) La barra espaciadora "no funcionaba": no era un bug.** Su `ajustes.json`
+  tenía `tecla_espacio: "reproducir"`, de cuando probamos los modos. Estaba
+  haciendo exactamente lo configurado. Corregido en su archivo. *Lección: antes
+  de buscar el fallo en el código, mirar la configuración REAL del usuario.*
+  **(2) Deslizador de posición** en el reproductor: se arrastra para ir a otro
+  punto (usa `Pista.saltar_a`, que ya existía). Mientras se arrastra, el reloj
+  deja de moverlo.
+  **(3) Panel "SONANDO AHORA" más compacto** (313 → 305 px) para que los
+  botones de cortina dejaran de quedar cortados abajo.
+  **(4) Ventana de Configuración**: se abría a 60 px del borde y los botones de
+  abajo quedaban fuera de pantalla. Ahora `_colocar()` la limita a la pantalla,
+  el pie se empaqueta con `side="bottom"` ANTES del cuaderno (misma lección del
+  `pack` de siempre) y hay botón **Aplicar** que guarda y aplica **sin cerrar**,
+  para poder probar la salida de audio sin reabrir el diálogo.
+  **(5) Pestañas reordenadas**: Audio primero, Servidor al final.
+  **(6) Ganancia del micrófono de verdad.** El fader iba de 0 a 100 % (tope
+  x1.0), así que con un micrófono lejano había que subir todo al máximo y aun
+  así se oía flojo. Ahora va **en decibelios, de −40 a +24 dB** (hasta x16), con
+  el valor a la vista. Y lo que de verdad lo arregla: **`eq.Compresor`**, un
+  nivelador de voz (envolvente con `lfilter` en C, no un bucle de Python) que
+  sube lo flojo y frena lo fuerte. Medido: +8 dB a una voz floja, −5 dB a una
+  fuerte; 30 dB de diferencia entre las dos pasan a 16. Encendido de fábrica,
+  con control de refuerzo por micrófono en la pestaña Micrófono.
+  ⚠️ Una prueba del ecualizador empezó a fallar al meter el compresor: es que
+  el compresor **nivela justo lo que medía**. Se apaga en esa prueba para medir
+  solo el ecualizador. 265 comprobaciones en verde. — Estado: ✅ — Siguiente:
+  el repositorio sigue sin subir a GitHub.
 
 - [2026-08-24] **Dos bugs reportados por el usuario, los dos reproducidos.**
   **(1) El selector de auriculares no hacía nada** (siempre salía por el

@@ -197,3 +197,85 @@ def respuesta(valores, muestreo=48000, puntos=64):
     with np.errstate(divide="ignore"):
         db = 20.0 * np.log10(np.maximum(np.abs(h), 1e-6))
     return list(zip([float(x) for x in w], [float(x) for x in db]))
+
+
+# ------------------------------------------------------------------ compresor
+
+class Compresor:
+    """
+    Nivelador de voz: sube lo flojo y frena lo fuerte.
+
+    Es lo que de verdad arregla un microfono que no se puede tener pegado a la
+    boca. Subir el volumen a secas amplifica igual la voz que el ruido de la
+    sala y ademas deja los picos disparados; el compresor aprieta solo cuando
+    hace falta y luego levanta todo por parejo (`makeup`), asi que la voz sale
+    pareja aunque uno se mueva o hable mas bajo.
+
+    La envolvente se calcula con un filtro de un polo en C (`lfilter`), no con
+    un bucle de Python: hay que hacerlo 48000 veces por segundo.
+    """
+
+    def __init__(self, muestreo=48000, umbral_db=-26.0, relacion=4.0,
+                 makeup_db=8.0, activo=False, tiempo_ms=25.0):
+        self.muestreo = int(muestreo)
+        self.umbral_db = float(umbral_db)
+        self.relacion = max(1.0, float(relacion))
+        self.makeup_db = float(makeup_db)
+        self.activo = bool(activo)
+        self.tiempo_ms = float(tiempo_ms)
+        self.reduccion = 0.0          # cuanto esta apretando ahora, en dB
+        self._zi = None
+        self._coef()
+
+    def _coef(self):
+        tau = max(0.001, self.tiempo_ms / 1000.0)
+        self._a = float(np.exp(-1.0 / (tau * self.muestreo)))
+        self._zi = None
+
+    def ajustar(self, umbral_db=None, relacion=None, makeup_db=None,
+                activo=None):
+        if umbral_db is not None:
+            self.umbral_db = float(umbral_db)
+        if relacion is not None:
+            self.relacion = max(1.0, float(relacion))
+        if makeup_db is not None:
+            self.makeup_db = float(makeup_db)
+        if activo is not None:
+            self.activo = bool(activo)
+
+    def procesar(self, bloque):
+        if not self.activo or bloque is None or not len(bloque):
+            self.reduccion = 0.0
+            return bloque
+        try:
+            mono = np.max(np.abs(bloque), axis=1).astype(np.float64)
+            # envolvente: filtro de un polo, con estado entre bloques
+            if self._zi is None:
+                self._zi = np.array([mono[0] * (1.0 - self._a)])
+            env, self._zi = signal.lfilter([1.0 - self._a], [1.0, -self._a],
+                                           mono, zi=self._zi)
+            env_db = 20.0 * np.log10(np.maximum(env, 1e-7))
+            exceso = np.maximum(0.0, env_db - self.umbral_db)
+            recorte = exceso * (1.0 - 1.0 / self.relacion)      # dB a bajar
+            ganancia_db = self.makeup_db - recorte
+            self.reduccion = float(-np.max(recorte)) if len(recorte) else 0.0
+            ganancia = np.power(10.0, ganancia_db / 20.0)
+            return (bloque * ganancia[:, None]).astype(np.float32)
+        except Exception:
+            return bloque      # ante la duda, la voz sin comprimir
+
+
+def ganancia_a_db(ganancia):
+    """De factor lineal a dB (0 -> -inf, se corta en -40)."""
+    g = float(ganancia)
+    if g <= 0.0001:
+        return -40.0
+    return max(-40.0, min(24.0, 20.0 * np.log10(g)))
+
+
+def db_a_ganancia(db):
+    """De dB a factor lineal. -40 dB o menos se toma como silencio."""
+    d = float(db)
+    if d <= -40.0:
+        return 0.0
+    return float(np.power(10.0, d / 20.0))

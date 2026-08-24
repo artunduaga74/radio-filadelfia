@@ -24,6 +24,7 @@ config.CARPETA_GRABA = pruebas / "grabaciones"
 config._cache = None
 
 import tkinter as tk
+from tkinter import ttk
 import numpy as np
 
 import biblioteca
@@ -238,6 +239,10 @@ class MicroSimulado:
     """El micro real puede no abrirse en un equipo de pruebas; simulamos uno."""
     abierto = True
     error = ""
+    dispositivo = ""
+
+    def abrir(self):
+        return True
 
     def leer(self, n):
         return np.zeros((n, 2), dtype=np.float32)
@@ -313,13 +318,14 @@ check("el abierto se pinta en rojo",
       str(a.botones_micro[0].cget("style")) == "MicOn.TButton")
 check("y el cerrado no",
       str(a.botones_micro[1].cget("style")) == "MicOff.TButton")
-a._fader_micro(1, 55)
+a._fader_micro(0, 0)                 # el locutor, a 0 dB
+a._fader_micro(1, -6)                # el invitado, 6 dB por debajo
 check("el fader del invitado cambia SU volumen",
-      abs(a.mezclador.canales[1].volumen - 0.55) < 0.01,
-      "%.2f" % a.mezclador.canales[1].volumen)
+      abs(a.mezclador.canales[1].volumen - 0.5) < 0.02,
+      "x%.2f" % a.mezclador.canales[1].volumen)
 check("y no toca el del locutor",
-      abs(a.mezclador.canales[0].volumen - 0.55) > 0.01 or
-      a.mezclador.canales[0].volumen != a.mezclador.canales[1].volumen)
+      abs(a.mezclador.canales[0].volumen - 1.0) < 0.02,
+      "x%.2f" % a.mezclador.canales[0].volumen)
 a.mezclador.canales[0].abierto = False
 a._pintar_micros()
 
@@ -447,6 +453,91 @@ check("si hay acople, los auriculares se cortan",
       a.mezclador._ganancia_monitor() == 0.0)
 a.mezclador.acople = False
 a.mezclador.corriendo = False
+
+print("")
+print("=== Deslizador para ir a otro punto de la pista ===")
+a.lista.limpiar()
+a.lista.agregar(biblioteca.sondear(TONO))
+a._pintar_lista()
+a.siguiente_pista()
+for _ in range(10):
+    a.update()
+p_ = a.mezclador.pista_a
+check("la pista sabe cuanto dura", p_.duracion > 4, "%.1f s" % p_.duracion)
+check("el deslizador existe", isinstance(a.barra_pista, ttk.Scale))
+a._tomar_pista()
+check("al agarrarlo, el reloj deja de moverlo", a._arrastrando)
+a.var_pos.set(500)          # la mitad
+a._soltar_pista()
+for _ in range(10):
+    a.update()
+check("suelta el arrastre", not a._arrastrando)
+check("salta a la mitad de la pista",
+      abs(p_.posicion - p_.duracion / 2) < 0.5,
+      "%.2f s de %.2f s" % (p_.posicion, p_.duracion))
+a.parar_musica()
+
+print("")
+print("=== Volumen del microfono, en decibelios ===")
+a._fader_micro(0, 0)
+check("0 dB deja el sonido tal cual",
+      abs(a.mezclador.canales[0].volumen - 1.0) < 0.01,
+      "x%.2f" % a.mezclador.canales[0].volumen)
+a._fader_micro(0, 12)
+check("+12 dB lo amplifica cuatro veces",
+      abs(a.mezclador.canales[0].volumen - 3.98) < 0.05,
+      "x%.2f" % a.mezclador.canales[0].volumen)
+a._fader_micro(0, 24)
+check("llega hasta +24 dB (dieciseis veces)",
+      abs(a.mezclador.canales[0].volumen - 15.85) < 0.3,
+      "x%.2f" % a.mezclador.canales[0].volumen)
+check("y se ve el valor en pantalla",
+      "dB" in a.lbls_micro_db[0].cget("text"),
+      a.lbls_micro_db[0].cget("text"))
+a._fader_micro(0, -40)
+check("del todo a la izquierda, apagado",
+      a.mezclador.canales[0].volumen == 0.0,
+      a.lbls_micro_db[0].cget("text"))
+check("queda guardado en su ficha",
+      config.microfonos()[0]["volumen"] == 0.0)
+a._fader_micro(0, 0)
+
+print("")
+print("=== Ventana de configuracion ===")
+import threading
+dlg = {}
+def abrir():
+    dlg["v"] = mod_app.DialogoConfig(a)
+h = threading.Thread(target=abrir, daemon=True)
+# el dialogo es modal: se construye a mano para poder mirarlo
+v = mod_app.DialogoConfig.__new__(mod_app.DialogoConfig)
+tk.Toplevel.__init__(v, a)
+v.padre = a
+v.title("Configuracion")
+v.vars = {}
+nb = ttk.Notebook(v)
+nb.pack()
+v._pestana_audio(nb)
+v._pestana_microfono(nb)
+v._pestana_carpetas(nb)
+v._pestana_servidor(nb)
+pestanas = [nb.tab(i, "text") for i in range(len(nb.tabs()))]
+check("Audio es la primera pestana", pestanas[0] == "Audio", str(pestanas))
+check("Servidor es la ultima", pestanas[-1] == "Servidor", str(pestanas))
+check("tiene el nivelador de voz", hasattr(v, "var_comp"))
+check("y el metodo Aplicar", callable(getattr(v, "aplicar", None)))
+v.update_idletasks()
+v.geometry("560x700")
+v._colocar(a)
+v.update_idletasks()
+x, y = v.winfo_x(), v.winfo_y()
+alto = v.winfo_height()
+check("la ventana no se sale por abajo de la pantalla",
+      y + alto <= v.winfo_screenheight(),
+      "y=%d alto=%d pantalla=%d" % (y, alto, v.winfo_screenheight()))
+check("ni por arriba", y >= 0, "y=%d" % y)
+v.destroy()
+a.update()
 
 print("\n=== Estado del aire ===")
 check("arranca fuera del aire", not a.emisor.al_aire)

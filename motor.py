@@ -47,6 +47,12 @@ class CanalMicro:
         self.eq = mod_eq.Ecualizador(muestreo,
                                      activo=bool(config.get("eq_activo", True)))
         self.eq.cargar(ajustes.get("eq") or {}, ajustes.get("eq_preset", "Plano"))
+        self.comp = mod_eq.Compresor(
+            muestreo,
+            umbral_db=float(ajustes.get("comp_umbral", -26)),
+            relacion=float(ajustes.get("comp_relacion", 4)),
+            makeup_db=float(ajustes.get("comp_makeup", 8)),
+            activo=bool(ajustes.get("comp", True)))
         self.abierto = False
         self.nivel = -60.0
 
@@ -70,6 +76,9 @@ class CanalMicro:
         bloque = self.micro.leer(cuadros)
         if not self.eq.plano:
             bloque = self.eq.procesar(bloque)
+        # el compresor va ANTES del fader: su umbral es absoluto, asi que debe
+        # ver el nivel que entra por el aparato, no el que uno haya puesto
+        bloque = self.comp.procesar(bloque)
         bloque = bloque * self.volumen
         self.nivel = audio.nivel(bloque)
         return bloque
@@ -458,5 +467,9 @@ class Mezclador:
         for aj, c in zip(config.microfonos(), self.canales):
             c.nombre = aj.get("nombre") or c.nombre
             c.volumen = float(aj.get("volumen", c.volumen))
+            c.comp.ajustar(umbral_db=aj.get("comp_umbral"),
+                           relacion=aj.get("comp_relacion"),
+                           makeup_db=aj.get("comp_makeup"),
+                           activo=aj.get("comp"))
             c.eq.activo = activo
             c.eq.cargar(aj.get("eq") or {}, aj.get("eq_preset", "Plano"))

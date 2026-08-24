@@ -220,6 +220,63 @@ m2.aplicar_ajustes()
 check("los cambios llegan en caliente", m2.eq.plano)
 
 procesos.cerrar_todos()
+print("")
+print("=== 10. El nivelador de voz (compresor) ===")
+
+def nivel_tras_compresor(amplitud, comp):
+    t = np.arange(FS) / FS
+    o = (amplitud * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
+    b = np.column_stack([o, o])
+    sal = np.concatenate([comp.procesar(b[i:i + 1024]) for i in range(0, FS, 1024)])
+    m_ = len(sal) // 2
+    ent = 20 * np.log10(max(np.sqrt(np.mean(b[m_:, 0] ** 2)), 1e-9))
+    fin = 20 * np.log10(max(np.sqrt(np.mean(sal[m_:, 0] ** 2)), 1e-9))
+    return ent, fin
+
+c = mod_eq.Compresor(FS, umbral_db=-26, relacion=4, makeup_db=8, activo=True)
+ent_bajo, sal_bajo = nivel_tras_compresor(0.02, c)
+check("una voz floja se levanta entera", (sal_bajo - ent_bajo) > 7.0,
+      "%+.1f dB" % (sal_bajo - ent_bajo))
+c2 = mod_eq.Compresor(FS, umbral_db=-26, relacion=4, makeup_db=8, activo=True)
+ent_alto, sal_alto = nivel_tras_compresor(0.6, c2)
+check("una voz fuerte se frena", (sal_alto - ent_alto) < 0,
+      "%+.1f dB" % (sal_alto - ent_alto))
+check("y asi se acercan entre ellas",
+      (sal_alto - sal_bajo) < (ent_alto - ent_bajo) - 8,
+      "antes %.0f dB de diferencia, ahora %.0f" % (ent_alto - ent_bajo,
+                                                   sal_alto - sal_bajo))
+c3 = mod_eq.Compresor(FS, activo=False)
+b = (np.random.randn(1024, 2) * 0.1).astype(np.float32)
+check("apagado no toca nada", c3.procesar(b) is b)
+
+print("")
+print("=== 11. Ganancia del microfono en decibelios ===")
+for db, esperado in ((0, 1.0), (6, 2.0), (12, 3.98), (20, 10.0), (24, 15.85)):
+    g = mod_eq.db_a_ganancia(db)
+    check("%+d dB = x%.2f" % (db, esperado), abs(g - esperado) < 0.05,
+          "x%.2f" % g)
+check("-40 dB o menos es silencio", mod_eq.db_a_ganancia(-40) == 0.0)
+check("la vuelta tambien cuadra",
+      abs(mod_eq.ganancia_a_db(mod_eq.db_a_ganancia(9)) - 9) < 0.01)
+
+print("")
+print("=== 12. El compresor va en cada canal de microfono ===")
+micros = config.microfonos()
+micros[0]["comp"] = True
+micros[0]["comp_makeup"] = 12
+micros[1]["comp"] = False
+config.guardar_microfonos(micros)
+m3 = motor.Mezclador(emisor=None)
+m3.monitor_activo = False
+check("el canal 1 lo trae encendido", m3.canales[0].comp.activo)
+check("con el refuerzo guardado", abs(m3.canales[0].comp.makeup_db - 12) < 0.1,
+      "%.0f dB" % m3.canales[0].comp.makeup_db)
+check("y el canal 2 apagado", not m3.canales[1].comp.activo)
+micros[1]["comp"] = True
+config.guardar_microfonos(micros)
+m3.aplicar_ajustes()
+check("se puede encender en caliente", m3.canales[1].comp.activo)
+
 print("\n" + "=" * 62)
 print("  %d comprobaciones OK, %d fallos" % (ok, len(fallos)))
 if fallos:

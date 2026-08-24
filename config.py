@@ -65,11 +65,13 @@ DEFECTOS = {
     # Varios microfonos: uno para el locutor y los demas para invitados.
     # Cada uno con su aparato, su volumen y su ecualizador.
     "microfonos": [
-        {"nombre": "Micro 1", "dispositivo": "", "volumen": 0.9,
+        {"nombre": "Micro 1", "dispositivo": "", "volumen": 1.0,
+         "comp": True, "comp_umbral": -26, "comp_relacion": 4, "comp_makeup": 8,
          "eq_preset": "Voz clara",
          "eq": {"graves": -1, "medios": -3, "presencia": 4, "aire": 2,
                 "corte_grave": True}},
-        {"nombre": "Invitado", "dispositivo": "", "volumen": 0.9,
+        {"nombre": "Invitado", "dispositivo": "", "volumen": 1.0,
+         "comp": True, "comp_umbral": -26, "comp_relacion": 4, "comp_makeup": 8,
          "eq_preset": "Voz clara",
          "eq": {"graves": -1, "medios": -3, "presencia": 4, "aire": 2,
                 "corte_grave": True}},
@@ -254,7 +256,13 @@ def microfonos():
         fuera.append({
             "nombre": (m.get("nombre") or "Micro %d" % (i + 1))[:14],
             "dispositivo": m.get("dispositivo") or "",
-            "volumen": float(m.get("volumen", 0.9)),
+            # el volumen ya no se queda en 1.0: un microfono lejano necesita
+            # amplificarse de verdad (hasta +24 dB = x16)
+            "volumen": max(0.0, min(16.0, float(m.get("volumen", 1.0)))),
+            "comp": bool(m.get("comp", True)),
+            "comp_umbral": float(m.get("comp_umbral", -26)),
+            "comp_relacion": float(m.get("comp_relacion", 4)),
+            "comp_makeup": float(m.get("comp_makeup", 8)),
             "eq_preset": m.get("eq_preset") or "Plano",
             "eq": dict(m.get("eq") or {}),
         })

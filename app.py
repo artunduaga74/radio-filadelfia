@@ -371,17 +371,25 @@ class App(tk.Tk):
         caja.columnconfigure(0, weight=1)
 
         self.lbl_pista = ttk.Label(caja, text="- nada -", style="Caja.TLabel",
-                                   font=estilo.FUENTE_GDE, anchor="w")
+                                   font=estilo.FUENTE_TIT, anchor="w")
         self.lbl_pista.grid(row=0, column=0, sticky="ew")
         self.lbl_artista = ttk.Label(caja, text="", style="CajaSuave.TLabel",
                                      anchor="w")
-        self.lbl_artista.grid(row=1, column=0, sticky="ew", pady=(0, px(6)))
+        self.lbl_artista.grid(row=1, column=0, sticky="ew", pady=(0, px(2)))
 
-        self.barra_pista = ttk.Progressbar(caja, maximum=1000)
+        # deslizador de posicion: se arrastra para ir a otro punto de la pista
+        self.var_pos = tk.DoubleVar(value=0.0)
+        self.barra_pista = ttk.Scale(caja, from_=0, to=1000,
+                                     variable=self.var_pos,
+                                     style="Caja.Horizontal.TScale")
         self.barra_pista.grid(row=2, column=0, sticky="ew")
+        self.barra_pista.bind("<ButtonPress-1>", self._tomar_pista)
+        self.barra_pista.bind("<ButtonRelease-1>", self._soltar_pista)
+        self._arrastrando = False
+        Consejo(self.barra_pista, "Arrastra para ir a otro punto de la pista")
 
         tiempos = ttk.Frame(caja, style="Caja.TFrame")
-        tiempos.grid(row=3, column=0, sticky="ew", pady=(px(3), px(8)))
+        tiempos.grid(row=3, column=0, sticky="ew", pady=(0, px(4)))
         self.lbl_transcurrido = ttk.Label(tiempos, text="0:00", style="CajaMono.TLabel")
         self.lbl_transcurrido.pack(side="left")
         self.lbl_restante = ttk.Label(tiempos, text="-0:00", style="CajaMono.TLabel")
@@ -433,6 +441,7 @@ class App(tk.Tk):
         self.vu = {}
         self.faders = {}
         self.botones_micro = []
+        self.lbls_micro_db = []
         fila = 0
 
         # --- un canal por microfono: el del locutor y los de los invitados
@@ -448,13 +457,20 @@ class App(tk.Tk):
             v.grid(row=fila, column=1, sticky="ew", padx=px(6))
             self.vu["micro%d" % c.indice] = v
 
-            var = tk.DoubleVar(value=c.volumen * 100)
-            f = ttk.Scale(caja, from_=0, to=100, variable=var,
+            # en dB, no en "porcentaje": un microfono lejano necesita
+            # amplificarse de verdad, hasta +24 dB (dieciseis veces)
+            var = tk.DoubleVar(value=mod_eq.ganancia_a_db(c.volumen))
+            f = ttk.Scale(caja, from_=-40, to=24, variable=var,
                           style="Caja.Horizontal.TScale",
                           command=lambda val, n=c.indice: self._fader_micro(n, val))
             f.grid(row=fila, column=2, sticky="ew")
-            f.configure(length=px(90))
+            f.configure(length=px(80))
+            Consejo(f, "Volumen de %s, en decibelios. 0 dB es el nivel tal cual "
+                       "entra; a la derecha, se amplifica." % c.nombre)
             self.faders["micro%d" % c.indice] = var
+            lbl = ttk.Label(caja, text="", style="CajaMono.TLabel", width=7)
+            lbl.grid(row=fila, column=3, sticky="w")
+            self.lbls_micro_db.append(lbl)
             fila += 1
 
         # --- musica y cortinas
@@ -576,9 +592,9 @@ class App(tk.Tk):
                 medidor.poner(n.get(clave, -60.0))
 
             p = self.mezclador.pista_a
-            if p.duracion > 0:
+            if p.duracion > 0 and not self._arrastrando:
                 frac = min(1.0, p.posicion / p.duracion)
-                self.barra_pista["value"] = frac * 1000
+                self.var_pos.set(frac * 1000)
                 self.lbl_transcurrido.configure(
                     text=biblioteca.duracion_texto(p.posicion))
                 self.lbl_restante.configure(
@@ -757,13 +773,18 @@ class App(tk.Tk):
                 b.configure(text=c.nombre, style="MicOff.TButton")
 
     def _fader_micro(self, indice, valor):
-        """El volumen de un microfono, guardado en su ficha."""
+        """El volumen de un microfono. El deslizador va en dB."""
         if not (0 <= indice < len(self.mezclador.canales)):
             return
-        self.mezclador.canales[indice].volumen = float(valor) / 100.0
+        db = float(valor)
+        ganancia = mod_eq.db_a_ganancia(db)
+        self.mezclador.canales[indice].volumen = ganancia
+        if indice < len(self.lbls_micro_db):
+            self.lbls_micro_db[indice].configure(
+                text=("apagado" if db <= -40 else "%+.0f dB" % db))
         micros = config.microfonos()
         if indice < len(micros):
-            micros[indice]["volumen"] = round(float(valor) / 100.0, 3)
+            micros[indice]["volumen"] = round(ganancia, 4)
             config.guardar_microfonos(micros)
 
     def poner_titulo(self):
@@ -821,6 +842,25 @@ class App(tk.Tk):
             self.ultimo_titulo_enviado = etiqueta
             threading.Thread(target=servidor.actualizar_titulo,
                              args=(etiqueta,), daemon=True).start()
+
+    def _tomar_pista(self, _=None):
+        """Mientras se arrastra, el reloj deja de mover el deslizador."""
+        if self.mezclador.pista_a.duracion > 0:
+            self._arrastrando = True
+
+    def _soltar_pista(self, _=None):
+        """Al soltar, se salta al punto elegido."""
+        if not self._arrastrando:
+            return
+        self._arrastrando = False
+        p = self.mezclador.pista_a
+        if p.duracion <= 0:
+            return
+        segundos = (self.var_pos.get() / 1000.0) * p.duracion
+        p.saltar_a(segundos)
+        self.lbl_transcurrido.configure(
+            text=biblioteca.duracion_texto(segundos))
+        self.mensaje("Pista en %s" % biblioteca.duracion_texto(segundos))
 
     def parar_musica(self):
         self.mezclador.pista_a.detener(fundido_ms=400)
@@ -1092,6 +1132,10 @@ class App(tk.Tk):
             self.nombres_cortina[i] = (nombres[i] if i < len(nombres) else "") or ""
             self._pintar_cortina(i)
         self._pintar_micros()
+        for c in self.mezclador.canales:
+            var = self.faders.get("micro%d" % c.indice)
+            if var is not None:
+                self._fader_micro(c.indice, var.get())
         carpeta = config.get("carpeta_musica")
         if carpeta and os.path.isdir(carpeta):
             self.biblio = biblioteca.Biblioteca(carpeta)
@@ -1239,25 +1283,67 @@ class DialogoConfig(tk.Toplevel):
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True, padx=px(10), pady=px(10))
         self.vars = {}
-        self._pestana_servidor(nb)
+        # Audio primero (es lo que mas se toca) y Servidor al final (se
+        # configura una vez y no se vuelve a mirar)
         self._pestana_audio(nb)
         self._pestana_microfono(nb)
         self._pestana_carpetas(nb)
+        self._pestana_servidor(nb)
 
+        # el pie se empaqueta ANTES que el cuaderno, para que los botones no
+        # se queden nunca sin sitio (ya paso con la barra de estado)
         pie = ttk.Frame(self, padding=(px(10), 0, px(10), px(10)))
-        pie.pack(fill="x")
-        ttk.Button(pie, text="Guardar", style="Accion.TButton",
+        pie.pack(side="bottom", fill="x")
+        ttk.Button(pie, text="Guardar y cerrar", style="Accion.TButton",
                    command=self.guardar).pack(side="right")
         ttk.Button(pie, text="Cancelar", command=self.destroy).pack(
             side="right", padx=px(6))
+        b_aplicar = ttk.Button(pie, text="Aplicar", command=self.aplicar)
+        b_aplicar.pack(side="right", padx=(0, px(6)))
+        Consejo(b_aplicar, "Guarda y aplica los cambios SIN cerrar la ventana, "
+                           "para poder probarlos.")
         ttk.Button(pie, text="Probar conexion",
                    command=self.probar).pack(side="left")
+        self.lbl_aplicado = ttk.Label(pie, text="", style="Suave.TLabel")
+        self.lbl_aplicado.pack(side="left", padx=px(8))
 
-        self.update_idletasks()
-        x = padre.winfo_rootx() + (padre.winfo_width() - self.winfo_width()) // 2
-        y = padre.winfo_rooty() + px(60)
-        self.geometry("+%d+%d" % (max(0, x), max(0, y)))
+        self._colocar(padre)
         self.wait_window()
+
+    def _colocar(self, padre):
+        """
+        Centrada sobre la ventana principal, pero SIN salirse de la pantalla.
+
+        Antes se abria a 60 px del borde de arriba de la ventana principal y,
+        como el cuaderno es alto, los botones de abajo quedaban fuera y habia
+        que mover la ventana para llegar a ellos.
+        """
+        self.update_idletasks()
+        ancho, alto = self.winfo_width(), self.winfo_height()
+        pantalla_a, pantalla_h = self.winfo_screenwidth(), self.winfo_screenheight()
+        x = padre.winfo_rootx() + (padre.winfo_width() - ancho) // 2
+        y = padre.winfo_rooty() + px(30)
+        x = max(px(4), min(x, pantalla_a - ancho - px(4)))
+        y = max(px(4), min(y, pantalla_h - alto - px(50)))   # deja la barra
+        self.geometry("+%d+%d" % (x, y))
+
+    def aplicar(self):
+        """Guardar y que surta efecto, sin cerrar: asi se puede ir probando."""
+        self._recoger()
+        self.padre.mezclador.aplicar_ajustes()
+        self.padre._cargar_ajustes_en_pantalla()
+        self.padre.mensaje("Cambios aplicados.")
+        detalle = self.padre.mezclador.error or ""
+        self.lbl_aplicado.configure(
+            text=(detalle[:44] if detalle else "aplicado"),
+            foreground=estilo.ROJO if detalle else estilo.VERDE)
+        self.after(4000, lambda: self._limpiar_aviso())
+
+    def _limpiar_aviso(self):
+        try:
+            self.lbl_aplicado.configure(text="")
+        except tk.TclError:
+            pass
 
     def _campo(self, padre, fila, etiqueta, clave, ancho=34, oculto=False):
         ttk.Label(padre, text=etiqueta).grid(row=fila, column=0, sticky="w",
@@ -1530,6 +1616,32 @@ class DialogoConfig(tk.Toplevel):
         self.curva.grid(row=fila, column=0, columnspan=3, sticky="ew", pady=px(4))
         fila += 1
 
+        ttk.Separator(f, orient="horizontal").grid(row=fila, column=0,
+                                                   columnspan=3, sticky="ew",
+                                                   pady=px(6))
+        fila += 1
+        self.var_comp = tk.BooleanVar(value=True)
+        ttk.Checkbutton(f, text="Nivelar la voz (para microfonos lejanos)",
+                        variable=self.var_comp,
+                        command=self._guardar_compresor).grid(
+            row=fila, column=0, columnspan=3, sticky="w")
+        fila += 1
+        ttk.Label(f, text="Refuerzo:").grid(row=fila, column=0, sticky="w",
+                                            pady=px(2))
+        self.var_comp_makeup = tk.DoubleVar(value=8.0)
+        ttk.Scale(f, from_=0, to=20, variable=self.var_comp_makeup,
+                  length=px(210),
+                  command=lambda v: self._guardar_compresor()).grid(
+            row=fila, column=1, sticky="w")
+        self.lbl_comp = ttk.Label(f, text="", width=7, style="Suave.TLabel")
+        self.lbl_comp.grid(row=fila, column=2, sticky="w")
+        fila += 1
+        ttk.Label(f, text="Sube lo flojo y frena lo fuerte, para no tener que "
+                          "pegarse al microfono.",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
+                                             sticky="w", pady=(0, px(4)))
+        fila += 1
+
         acciones = ttk.Frame(f)
         acciones.grid(row=fila, column=0, columnspan=3, sticky="ew", pady=px(6))
         ttk.Button(acciones, text="Guardar como 'A mi gusto'",
@@ -1538,10 +1650,25 @@ class DialogoConfig(tk.Toplevel):
                    command=self._escuchar_micro).pack(side="left", padx=px(6))
         fila += 1
 
+        self.var_comp.set(bool(micros[0].get("comp", True)))
+        self.var_comp_makeup.set(float(micros[0].get("comp_makeup", 8)))
+        self.lbl_comp.configure(text="+%.0f dB" % float(micros[0].get("comp_makeup", 8)))
         ttk.Label(f, text="Consejo: enciende el monitor, abre el microfono y mueve las bandas mientras hablas.",
                   style="Suave.TLabel", justify="left").grid(
             row=fila, column=0, columnspan=3, sticky="w")
         self._refrescar_eq()
+
+    def _guardar_compresor(self):
+        """El nivelador de voz, guardado en la ficha del microfono elegido."""
+        micros = config.microfonos()
+        i = self._indice_eq()
+        makeup = round(float(self.var_comp_makeup.get()), 1)
+        self.lbl_comp.configure(text="+%.0f dB" % makeup)
+        if i < len(micros):
+            micros[i]["comp"] = bool(self.var_comp.get())
+            micros[i]["comp_makeup"] = makeup
+            config.guardar_microfonos(micros)
+            self.padre.mezclador.aplicar_ajustes()
 
     def _indice_eq(self):
         try:
@@ -1560,6 +1687,9 @@ class DialogoConfig(tk.Toplevel):
             var.set(float(base.get(clave, 0)))
         self.var_corte.set(bool(base.get("corte_grave", True)))
         self.var_eq_preset.set(m.get("eq_preset") or "Plano")
+        self.var_comp.set(bool(m.get("comp", True)))
+        self.var_comp_makeup.set(float(m.get("comp_makeup", 8)))
+        self.lbl_comp.configure(text="+%.0f dB" % float(m.get("comp_makeup", 8)))
         self._refrescar_eq()
 
     def _valores_eq(self):

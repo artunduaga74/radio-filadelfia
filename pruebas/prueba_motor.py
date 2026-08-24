@@ -294,6 +294,10 @@ m6.canales[0].eq.cargar({"graves": 0, "medios": 0, "presencia": 0, "aire": 0,
                          "corte_grave": False})
 m6.canales[1].eq.cargar({"graves": 0, "medios": -12, "presencia": 0, "aire": 0,
                          "corte_grave": False})
+# el compresor nivela las diferencias, y aqui queremos medir SOLO el
+# ecualizador: se apaga en los dos canales
+for c in m6.canales:
+    c.comp.activo = False
 check("son ecualizadores distintos", m6.canales[0].eq is not m6.canales[1].eq)
 check("el 1 queda plano", m6.canales[0].eq.plano)
 check("y el 2 no", not m6.canales[1].eq.plano)
