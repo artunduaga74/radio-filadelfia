@@ -101,17 +101,19 @@ class Mezclador:
         self.grabador = grabador
         self.al_medir = al_medir          # funcion(niveles) para los vumetros
         self.muestreo = int(config.get("muestreo", 48000))
+        self.bloque = max(128, int(config.get("bloque_audio", BLOQUE)))
 
-        self.canales = [CanalMicro(i, aj, self.muestreo, BLOQUE)
+        self.canales = [CanalMicro(i, aj, self.muestreo, self.bloque)
                         for i, aj in enumerate(config.microfonos())]
-        self.pista_a = audio.Pista(self.muestreo, BLOQUE)
-        self.pista_b = audio.Pista(self.muestreo, BLOQUE)
+        self.pista_a = audio.Pista(self.muestreo, self.bloque)
+        self.pista_b = audio.Pista(self.muestreo, self.bloque)
         self.efectos = []                 # pistas de un solo uso (jingles)
 
         self.vol_micro = float(config.get("vol_micro", 0.9))
         self.vol_musica = float(config.get("vol_musica", 0.8))
         self.vol_efectos = float(config.get("vol_efectos", 0.85))
         self.vol_monitor = float(config.get("volumen_monitor", 0.8))
+        self.retraso_ms = 0.0             # lo mide `medir_retraso()`
         self.monitor_activo = bool(config.get("monitor_activo", True))
         self.monitor_mudo_con_micro = bool(config.get("monitor_mudo_con_micro"))
         self.proteccion_acople = bool(config.get("proteccion_acople", True))
@@ -211,7 +213,7 @@ class Mezclador:
         for _, extras in intentos:
             try:
                 self._salida = sd.OutputStream(
-                    samplerate=self.muestreo, blocksize=BLOQUE, device=idx,
+                    samplerate=self.muestreo, blocksize=self.bloque, device=idx,
                     channels=CANALES, dtype="float32", latency="low",
                     extra_settings=extras)
                 self._salida.start()
@@ -252,6 +254,25 @@ class Mezclador:
                                                   or "la salida del sistema")
         return False, self.error
 
+    def medir_retraso(self):
+        """
+        Cuanto tarda uno en oirse por los auriculares, en milisegundos.
+        Suma lo que dice la tarjeta de sonido mas lo que anadimos nosotros.
+        """
+        ms_bloque = 1000.0 * self.bloque / self.muestreo
+        propio = ms_bloque + 1000.0 * self.limitador.mira / self.muestreo
+        tarjeta = 0.0
+        try:
+            if self._salida is not None:
+                tarjeta += self._salida.latency * 1000.0
+            c = self.canales[0]
+            if c.micro.stream is not None:
+                tarjeta += c.micro.stream.latency * 1000.0
+        except Exception:
+            pass
+        self.retraso_ms = propio + tarjeta
+        return self.retraso_ms
+
     def probar_monitor(self, segundos=1.0, hz=440.0):
         """
         Un pitido corto por los auriculares, para comprobarlos sin salir al
@@ -260,7 +281,7 @@ class Mezclador:
         idx = audio.buscar(config.get("monitor") or "", entrada=False)
         for extras in (audio.ajustes_wasapi(idx), None):
             try:
-                s = sd.OutputStream(samplerate=self.muestreo, blocksize=BLOQUE,
+                s = sd.OutputStream(samplerate=self.muestreo, blocksize=self.bloque,
                                     device=idx, channels=CANALES,
                                     dtype="float32", extra_settings=extras)
                 s.start()
@@ -305,7 +326,7 @@ class Mezclador:
 
     def disparar_efecto(self, ruta, titulo=""):
         """Suelta un jingle encima de todo. Pueden sonar varios a la vez."""
-        p = audio.Pista(self.muestreo, BLOQUE)
+        p = audio.Pista(self.muestreo, self.bloque)
         if p.cargar(ruta, titulo):
             p.reproducir()
             with self._lock:
@@ -322,11 +343,11 @@ class Mezclador:
     # ------------------------------------------------------------ el bucle
 
     def _bucle(self):
-        periodo = BLOQUE / float(self.muestreo)
+        periodo = self.bloque / float(self.muestreo)
         siguiente = time.perf_counter()
         contador = 0
         while not self._parar.is_set():
-            bloque = self._mezclar(BLOQUE)
+            bloque = self._mezclar(self.bloque)
 
             if self.emisor is not None:
                 self.emisor.enviar(bloque)
@@ -336,7 +357,11 @@ class Mezclador:
             if self._salida is not None:
                 try:
                     # esto bloquea el tiempo del bloque: es nuestro reloj
-                    self._salida.write(bloque * self._ganancia_monitor())
+                    # el volumen de los auriculares NO toca lo que sale al
+                    # aire: se aplica solo a esta copia, y se recorta por si
+                    # se sube por encima de uno
+                    oido = np.clip(bloque * self._ganancia_monitor(), -1.0, 1.0)
+                    self._salida.write(oido)
                 except Exception:
                     self._salida = None
             else:

@@ -333,6 +333,54 @@ n2 = m6.niveles["micro1"]
 check("el ecualizador del 2 le baja los 400 Hz", n1 - n2 > 8,
       "%.1f dB vs %.1f dB" % (n1, n2))
 
+print("")
+print("=== 13. Volumen de los auriculares: no toca lo que sale al aire ===")
+m7 = motor.Mezclador(emisor=None)
+m7.monitor_activo = False
+m7.pista_a.cargar(TONO)
+m7.pista_a.reproducir()
+for _ in range(4):
+    m7._mezclar(m7.bloque)
+
+m7.vol_monitor = 1.0
+al_aire_fuerte = rms(m7._mezclar(m7.bloque))
+oido_fuerte = m7._ganancia_monitor()
+m7.vol_monitor = 0.1
+al_aire_flojo = rms(m7._mezclar(m7.bloque))
+oido_flojo = m7._ganancia_monitor()
+
+check("bajar los auriculares NO baja la emision",
+      abs(al_aire_fuerte - al_aire_flojo) / max(al_aire_fuerte, 1e-9) < 0.15,
+      "%.3f vs %.3f" % (al_aire_fuerte, al_aire_flojo))
+check("pero si baja lo que uno oye", oido_flojo < oido_fuerte * 0.5,
+      "%.2f -> %.2f" % (oido_fuerte, oido_flojo))
+m7.vol_monitor = 0.0
+check("se puede dejar mudo", m7._ganancia_monitor() == 0.0)
+
+print("")
+print("=== 14. Retraso al oirse (el bloque de audio) ===")
+check("el bloque se puede configurar", m7.bloque in (128, 256, 512, 1024),
+      "%d muestras" % m7.bloque)
+ms = 1000.0 * m7.bloque / 48000.0
+check("un bloque de 512 son unos 10 ms", m7.bloque != 512 or abs(ms - 10.7) < 0.5,
+      "%.1f ms" % ms)
+retraso = m7.medir_retraso()
+check("sabe decir cuanto retraso tiene", retraso > 0, "%.0f ms" % retraso)
+check("y con el bloque corto baja de 80 ms",
+      m7.bloque > 512 or retraso < 80, "%.0f ms" % retraso)
+
+config.guardar({"bloque_audio": 1024})
+m8 = motor.Mezclador(emisor=None)
+check("cambiarlo surte efecto", m8.bloque == 1024, "%d" % m8.bloque)
+check("y el mezclador sigue funcionando",
+      m8._mezclar(m8.bloque).shape == (1024, 2),
+      str(m8._mezclar(m8.bloque).shape))
+config.guardar({"bloque_audio": 512})
+m9 = motor.Mezclador(emisor=None)
+check("con 512 tambien mezcla bien",
+      m9._mezclar(m9.bloque).shape == (512, 2),
+      str(m9._mezclar(m9.bloque).shape))
+
 print("\n" + "=" * 60)
 print("  %d comprobaciones OK, %d fallos" % (ok, len(fallos)))
 if fallos:

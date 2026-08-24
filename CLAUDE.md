@@ -106,7 +106,7 @@ eq.py              cadena de voz: ecualizador, compresor, puerta y limitador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           285 comprobaciones automáticas
+pruebas/           295 comprobaciones automáticas
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -178,6 +178,27 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **Volumen de los auriculares y retraso al oírse.**
+  **(1) El volumen del monitor no se podía tocar.** Descuido mío: el ajuste
+  `volumen_monitor` existía desde el principio pero **nunca le puse un
+  control**. Los botones de volumen de Windows tampoco servían, porque cambian
+  el dispositivo *predeterminado* y la aplicación abre el suyo aparte. Ahora
+  hay un fader **AURICULARES** en la mesa, en dB. Probado que **no toca lo que
+  sale al aire**: bajarlo de 1.0 a 0.1 deja la emisión igual (0.276 vs 0.284).
+  **(2) Sí hay latencia, y era mucha: 110 ms medidos.** Desglose en su equipo:
+  tarjeta de entrada 42.7 ms + tarjeta de salida 42.7 + bloque de proceso 21.3
+  + mirada del limitador 3.0. Por encima de 40-50 ms ya estorba al hablar.
+  **El bloque de audio pasa a ser configurable** (`bloque_audio`) y el nuevo
+  valor de fábrica es **512** en vez de 1024: medido, baja el total a **59 ms**.
+  Por debajo de 512 apenas se gana (256 → 54 ms, 128 → 51 ms) porque manda la
+  latencia de la tarjeta, y el riesgo de cortes sube. Selector en
+  Configuración → Audio, con `Mezclador.medir_retraso()` para saber el número.
+  ⚠️ Lo que de verdad quita el eco al oírse es la **escucha directa por
+  hardware**, si el micrófono USB trae salida de auriculares: es instantánea
+  por diseño. Con software siempre habrá algo.
+  295 comprobaciones en verde. — Estado: ✅ — Siguiente: subir a GitHub (el
+  usuario crea el repositorio y yo enlazo y empujo).
 
 - [2026-08-24] **Segunda ronda de calidad: zumbido de red, mono y marca.**
   El usuario dijo que había mejorado pero "algo le falta". Se midió su

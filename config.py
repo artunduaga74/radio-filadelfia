@@ -87,6 +87,10 @@ DEFECTOS = {
     "monitor": "",              # dispositivo de salida para auriculares
     "api_audio": "Windows WASAPI",
     "monitor_activo": True,
+    # Tamano del bloque de audio. Manda en el retraso con que uno se oye:
+    # medido en este equipo, 1024 -> 110 ms y 512 -> 59 ms. Mas pequeno da
+    # menos retraso pero exige mas del ordenador.
+    "bloque_audio": 512,
     # Anti-acople: si el monitor sale por ALTAVOCES (o un aparato Bluetooth
     # que no son auriculares), abrir el microfono provoca pitido. Con esto,
     # los auriculares se callan mientras haya un microfono abierto.
