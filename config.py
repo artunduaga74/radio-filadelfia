@@ -36,10 +36,13 @@ CARPETA_GRABA = BASE / "grabaciones"
 DEFECTOS = {
     # --- servidor de streaming
     "host": "",
-    "puerto": 8026,             # el harbor del autoDJ (protocolo Icecast)
-    "mount": "/",
-    "usuario": "source",
-    "protocolo": "icecast",     # "icecast" | "shoutcast_v1"
+    # El harbor del autoDJ escucha ICY en 8027: Centova muestra 8026 y los
+    # codificadores de SHOUTcast v1 le suman 1. Comprobado contra el servidor.
+    "puerto": 8027,
+    "mount": "/stream",         # solo lo usa el protocolo Icecast
+    "usuario": "",              # usuario de la Cuenta de DJ
+    "protocolo": "shoutcast_v1",   # "shoutcast_v1" | "icecast"
+    "clave_con_usuario": True,  # Centova espera la clave como usuario:clave
     "puerto_publico": 8024,     # por donde escuchan los oyentes (estadísticas)
     "puerto_admin": 8024,
 

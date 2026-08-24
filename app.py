@@ -34,6 +34,11 @@ import servidor
 from estilo import px
 
 TITULO = "Voz de Filadelfia - Estudio"
+
+# como se llaman los protocolos en pantalla
+PROTO_V1 = "SHOUTcast v1  (el de esta emisora)"
+PROTO_ICE = "Icecast"
+PROTOCOLOS = {"shoutcast_v1": PROTO_V1, "icecast": PROTO_ICE}
 EXTS = " ".join("*" + e for e in sorted(biblioteca.EXTENSIONES))
 
 
@@ -529,8 +534,7 @@ class App(tk.Tk):
         if self.mezclador.error:
             self._anotar(self.mezclador.error)
             self.mensaje(self.mezclador.error)
-        legacy = config.get("protocolo") == "shoutcast_v1"
-        if self.emisor.arrancar(legacy=legacy):
+        if self.emisor.arrancar():
             self.mensaje("Conectando con el servidor...")
         else:
             self.mensaje(self.emisor.detalle)
@@ -966,28 +970,46 @@ class DialogoConfig(tk.Toplevel):
         f.columnconfigure(1, weight=1)
 
         self._campo(f, 0, "Servidor (host):", "host")
-        self._campo(f, 1, "Puerto de la fuente:", "puerto", 10)
-        self._campo(f, 2, "Punto de montaje:", "mount", 14)
-        self._campo(f, 3, "Usuario DJ:", "usuario", 20)
+        ttk.Label(f, text="solo el nombre: cast1.asurahosting.com  "
+                          "(sin http:// y sin la ruta de la pagina)",
+                  style="Suave.TLabel").grid(row=1, column=1, sticky="w")
 
-        ttk.Label(f, text="Clave DJ:").grid(row=4, column=0, sticky="w", pady=px(3))
+        ttk.Label(f, text="Protocolo:").grid(row=2, column=0, sticky="w", pady=px(3))
+        self.var_proto = tk.StringVar(
+            value=PROTOCOLOS.get(config.get("protocolo"), PROTO_V1))
+        ttk.Combobox(f, textvariable=self.var_proto, state="readonly", width=32,
+                     values=(PROTO_V1, PROTO_ICE)).grid(row=2, column=1, sticky="w",
+                                                        pady=px(3))
+
+        self._campo(f, 3, "Puerto de la fuente:", "puerto", 10)
+        ttk.Label(f, text="el que muestra Centova MAS UNO   (8026 -> 8027)",
+                  style="Suave.TLabel").grid(row=4, column=1, sticky="w")
+
+        self._campo(f, 5, "Usuario DJ:", "usuario", 20)
+        ttk.Label(f, text="Clave DJ:").grid(row=6, column=0, sticky="w", pady=px(3))
         self.var_clave = tk.StringVar(value=config.clave("clave_fuente"))
         ttk.Entry(f, textvariable=self.var_clave, show="*", width=34).grid(
-            row=4, column=1, sticky="ew", pady=px(3))
+            row=6, column=1, sticky="ew", pady=px(3))
+        ttk.Label(f, text="los de una Cuenta de DJ del panel, no los del panel",
+                  style="Suave.TLabel").grid(row=7, column=1, sticky="w")
 
-        self._campo(f, 5, "Puerto publico (oyentes):", "puerto_publico", 10)
+        self._campo(f, 8, "Punto de montaje:", "mount", 14)
+        ttk.Label(f, text="solo lo usa Icecast; con SHOUTcast v1 se ignora",
+                  style="Suave.TLabel").grid(row=9, column=1, sticky="w")
 
-        ttk.Separator(f, orient="horizontal").grid(row=6, column=0, columnspan=2,
+        self._campo(f, 10, "Puerto publico (oyentes):", "puerto_publico", 10)
+
+        ttk.Separator(f, orient="horizontal").grid(row=11, column=0, columnspan=2,
                                                    sticky="ew", pady=px(8))
-        self._campo(f, 7, "Nombre de la emisora:", "nombre_emisora")
-        self._campo(f, 8, "Genero:", "genero", 20)
-        self._campo(f, 9, "Sitio web:", "url_emisora")
+        self._campo(f, 12, "Nombre de la emisora:", "nombre_emisora")
+        self._campo(f, 13, "Genero:", "genero", 20)
+        self._campo(f, 14, "Sitio web:", "url_emisora")
 
-        ttk.Separator(f, orient="horizontal").grid(row=10, column=0, columnspan=2,
+        ttk.Separator(f, orient="horizontal").grid(row=15, column=0, columnspan=2,
                                                    sticky="ew", pady=px(8))
-        ttk.Label(f, text="Calidad:").grid(row=11, column=0, sticky="w")
+        ttk.Label(f, text="Calidad:").grid(row=16, column=0, sticky="w")
         cal = ttk.Frame(f)
-        cal.grid(row=11, column=1, sticky="w")
+        cal.grid(row=16, column=1, sticky="w")
         self.var_bitrate = tk.StringVar(value=str(config.get("bitrate")))
         ttk.Combobox(cal, textvariable=self.var_bitrate, width=6, state="readonly",
                      values=("64", "96", "128", "192")).pack(side="left")
@@ -997,7 +1019,7 @@ class DialogoConfig(tk.Toplevel):
                      values=("mp3", "aac")).pack(side="left")
 
         ttk.Label(f, text="El plan contratado admite 128 kbps y 120 oyentes.",
-                  style="Suave.TLabel").grid(row=12, column=0, columnspan=2,
+                  style="Suave.TLabel").grid(row=17, column=0, columnspan=2,
                                              sticky="w", pady=(px(6), 0))
 
     def _pestana_audio(self, nb):
@@ -1078,10 +1100,10 @@ class DialogoConfig(tk.Toplevel):
         ok, msg = mod_emisor.probar_conexion(
             config.get("host"), config.get("puerto"), config.get("usuario"),
             self.var_clave.get(), config.get("mount"),
-            legacy=config.get("protocolo") == "shoutcast_v1", segundos=4)
+            protocolo=config.get("protocolo"), segundos=4)
         self.config(cursor="")
         if ok:
-            messagebox.showinfo("Prueba", "Conectado correctamente.", parent=self)
+            messagebox.showinfo("Prueba", msg, parent=self)
         else:
             messagebox.showerror(
                 "Prueba",
@@ -1100,6 +1122,11 @@ class DialogoConfig(tk.Toplevel):
                 except ValueError:
                     valor = config.get(clave)
             datos[clave] = valor
+        # el host se limpia siempre: pegar la direccion de la pagina del panel
+        # en vez del nombre del servidor es el error mas facil de cometer
+        datos["host"] = mod_emisor.limpiar_host(datos.get("host", ""))
+        datos["protocolo"] = ("shoutcast_v1" if self.var_proto.get() == PROTO_V1
+                              else "icecast")
         datos["bitrate"] = int(self.var_bitrate.get())
         datos["codec"] = self.var_codec.get()
         datos["microfono"] = self.var_micro.get()
