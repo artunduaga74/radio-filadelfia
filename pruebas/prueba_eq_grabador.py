@@ -203,14 +203,19 @@ check("el mezclador tiene grabador", m.grabador is gf)
 check("le llegan bloques", gf.bloques == 1)
 
 print("\n=== 9. El ecualizador se aplica al microfono ===")
-config.guardar({"eq_activo": True, "eq_preset": "Voz clara",
-                "eq_valores": dict(mod_eq.PRESETS["Voz clara"])})
+micros = config.microfonos()
+micros[0]["eq"] = dict(mod_eq.PRESETS["Voz clara"])
+micros[0]["eq_preset"] = "Voz clara"
+config.guardar_microfonos(micros)
+config.guardar({"eq_activo": True})
 m2 = motor.Mezclador(emisor=None)
 m2.monitor_activo = False
 check("el mezclador crea su ecualizador", m2.eq is not None)
 check("y carga el ajuste guardado", not m2.eq.plano)
-config.guardar({"eq_valores": {"graves": 0, "medios": 0, "presencia": 0,
-                               "aire": 0, "corte_grave": False}})
+micros = config.microfonos()
+micros[0]["eq"] = {"graves": 0, "medios": 0, "presencia": 0, "aire": 0,
+                   "corte_grave": False}
+config.guardar_microfonos(micros)
 m2.aplicar_ajustes()
 check("los cambios llegan en caliente", m2.eq.plano)
 

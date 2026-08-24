@@ -104,7 +104,9 @@ procesos.py        job object de Windows: ningún ffmpeg sobrevive a la app
 prueba_conexion.py busca solo el puerto y la forma de clave correctos
 eq.py              ecualizador de voz (biquads + scipy), con ajustes de fábrica
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
-pruebas/           170 comprobaciones automáticas
+monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
+ventana_aire.py    ventanita flotante con el estado de la emisora
+pruebas/           213 comprobaciones automáticas
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -149,8 +151,8 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
 ## 6. Estado y qué sigue
 
 **Hecho y probado (2026-08-24):** los 11 módulos, **94 comprobaciones en
-verde** (33 del motor, 39 del emisor/ICY, 34 del ecualizador y el grabador, 64 de la
-ventana). Todo lo de audio se mide: dB reales, no "parece que suena".
+verde** (50 del motor, 39 del emisor/ICY, 34 del ecualizador y el grabador, 13 del
+monitor de aire, 77 de la ventana). Todo lo de audio se mide: dB reales, no "parece que suena".
 
 **⛔ GATE PENDIENTE — lo único que falta para darlo por bueno:** el usuario debe
 correr `python prueba_conexion.py` con su usuario y clave de DJ. **Nunca se ha
@@ -170,6 +172,31 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **Varios micrófonos (invitados) y monitor de aire.**
+  **(1) Mesa con varios micrófonos.** Nuevo `motor.CanalMicro`: cada micrófono
+  tiene su aparato, su nombre, su volumen y **su propio ecualizador** (la voz
+  de un invitado no necesita el mismo ajuste que la del locutor). Hasta 4
+  (`config.MAX_MICROS`), 2 de fábrica. En la mesa hay una fila por micrófono
+  (botón que se pone rojo + vúmetro + fader) y atajos `Ctrl+1..4`. El ducking
+  ahora se dispara si habla **cualquiera** de ellos. `Mezclador.micro`,
+  `.eq` y `.micro_abierto` quedan como atajos al canal 0 (con setter) para no
+  romper el código ni las pruebas existentes.
+  ⚠️ **Trampa de la migración:** `microfonos()` debe leer el ARCHIVO
+  (`_crudo()`), no `cargar()` — como los valores de fábrica ya traen la clave
+  `microfonos`, preguntársela a `cargar()` nunca detectaría una configuración
+  antigua y se habría perdido el micrófono que el usuario ya tenía puesto.
+  **(2) Monitor de aire** (`monitor_aire.py` + `ventana_aire.py`): escucha el
+  chorro público con ffmpeg y **mide el nivel real**, porque el panel del
+  servidor puede decir "en línea" mientras se manda silencio — la avería más
+  peligrosa. Ventana pequeña, opcionalmente siempre visible, con luz de estado,
+  vúmetro, título, oyentes y contador de silencio (rojo a los 15 s). Se abre en
+  **Ver → Monitor de aire**. ⚠️ Mientras está abierta **cuenta como un oyente**
+  y gasta su ancho de banda; por eso solo escucha con la ventana abierta y se
+  cierra sola al salir de la aplicación. Verificado contra la emisora real:
+  midió -4.2 dB de un programa en curso.
+  213 comprobaciones en verde. — Estado: ✅ — Siguiente: nada pendiente; sigue
+  sin subir a GitHub.
 
 - [2026-08-24] **La barra espaciadora abre el micrófono (configurable).**
   Pedido del usuario: que la barra sea el botón del micrófono, con opción de

@@ -134,12 +134,13 @@ a.play_pausa()
 check("reanuda", p.sonando)
 
 print("\n=== Vumetros ===")
-a.mezclador.niveles = {"micro": -6.0, "musica": -20.0, "efectos": -60.0,
+a.mezclador.niveles = {"micro": -6.0, "micro0": -6.0, "micro1": -60.0,
+                       "musica": -20.0, "efectos": -60.0,
                        "aire_i": -3.0, "aire_d": -3.0, "reduccion": 0.0}
 a._tic_rapido()
 a.update()
 encendidos = sum(1 for i in range(28)
-                 if a.vu["micro"].itemcget("seg%d" % i, "fill") != mod_app.estilo.VU_APAGADO)
+                 if a.vu["micro0"].itemcget("seg%d" % i, "fill") != mod_app.estilo.VU_APAGADO)
 check("el vumetro del micro se enciende", encendidos > 20, "%d segmentos" % encendidos)
 apagados = sum(1 for i in range(28)
                if a.vu["efectos"].itemcget("seg%d" % i, "fill") == mod_app.estilo.VU_APAGADO)
@@ -290,6 +291,58 @@ check("escribiendo en un campo, la barra no dispara nada",
       a.mezclador.micro_abierto == micro)
 campo.destroy()
 a.focus_get = lambda: None
+
+print("")
+print("=== Varios microfonos en la mesa ===")
+check("hay un boton por microfono",
+      len(a.botones_micro) == len(a.mezclador.canales),
+      "%d botones / %d canales" % (len(a.botones_micro),
+                                   len(a.mezclador.canales)))
+check("hay un vumetro por microfono",
+      all(("micro%d" % c.indice) in a.vu for c in a.mezclador.canales))
+check("y un fader por microfono",
+      all(("micro%d" % c.indice) in a.faders for c in a.mezclador.canales))
+check("los botones llevan el nombre de cada uno",
+      a.botones_micro[0].cget("text") == a.mezclador.canales[0].nombre,
+      a.botones_micro[0].cget("text"))
+a.mezclador.canales[0].abierto = True
+a.mezclador.canales[1].abierto = False
+a._pintar_micros()
+a.update()
+check("el abierto se pinta en rojo",
+      str(a.botones_micro[0].cget("style")) == "MicOn.TButton")
+check("y el cerrado no",
+      str(a.botones_micro[1].cget("style")) == "MicOff.TButton")
+a._fader_micro(1, 55)
+check("el fader del invitado cambia SU volumen",
+      abs(a.mezclador.canales[1].volumen - 0.55) < 0.01,
+      "%.2f" % a.mezclador.canales[1].volumen)
+check("y no toca el del locutor",
+      abs(a.mezclador.canales[0].volumen - 0.55) > 0.01 or
+      a.mezclador.canales[0].volumen != a.mezclador.canales[1].volumen)
+a.mezclador.canales[0].abierto = False
+a._pintar_micros()
+
+print("")
+print("=== Ventana del monitor de aire ===")
+config.guardar({"host": "cast1.asurahosting.com", "puerto_publico": 8024})
+a.abrir_monitor_aire()
+for _ in range(20):
+    a.update()
+va = getattr(a, "_ventana_aire", None)
+check("la ventana se abre", va is not None and va.winfo_exists())
+if va:
+    check("tiene su vumetro", va.vu is not None)
+    check("dice algo del estado", bool(va.lbl_estado.cget("text")),
+          va.lbl_estado.cget("text"))
+    check("puede quedarse siempre visible",
+          isinstance(va.var_encima.get(), bool))
+    va._pintar()
+    a.update()
+    va.cerrar()
+    a.update()
+    check("al cerrarla deja de escuchar",
+          va.vigilante.estado == "apagado", va.vigilante.estado)
 
 print("\n=== Estado del aire ===")
 check("arranca fuera del aire", not a.emisor.al_aire)

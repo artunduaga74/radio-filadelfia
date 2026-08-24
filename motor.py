@@ -30,6 +30,51 @@ CANALES = 2
 BLOQUE = 1024
 
 
+class CanalMicro:
+    """
+    Un microfono de la mesa: el suyo, el del invitado, etc.
+
+    Cada uno lleva su propio aparato, su volumen y su ecualizador, porque una
+    voz de invitado casi nunca necesita el mismo ajuste que la del locutor.
+    """
+
+    def __init__(self, indice, ajustes, muestreo, bloque):
+        self.indice = indice
+        self.nombre = ajustes.get("nombre") or ("Micro %d" % (indice + 1))
+        self.micro = audio.Microfono(ajustes.get("dispositivo") or None,
+                                     muestreo, bloque)
+        self.volumen = float(ajustes.get("volumen", 0.9))
+        self.eq = mod_eq.Ecualizador(muestreo,
+                                     activo=bool(config.get("eq_activo", True)))
+        self.eq.cargar(ajustes.get("eq") or {}, ajustes.get("eq_preset", "Plano"))
+        self.abierto = False
+        self.nivel = -60.0
+
+    @property
+    def dispositivo(self):
+        return self.micro.dispositivo
+
+    @property
+    def listo(self):
+        return self.micro.abierto
+
+    @property
+    def error(self):
+        return self.micro.error
+
+    def leer(self, cuadros):
+        """El audio de este microfono, ya ecualizado y con su volumen."""
+        if not (self.abierto and self.micro.abierto):
+            self.nivel = -60.0
+            return None
+        bloque = self.micro.leer(cuadros)
+        if not self.eq.plano:
+            bloque = self.eq.procesar(bloque)
+        bloque = bloque * self.volumen
+        self.nivel = audio.nivel(bloque)
+        return bloque
+
+
 class Mezclador:
 
     def __init__(self, emisor=None, al_medir=None, grabador=None):
@@ -38,19 +83,12 @@ class Mezclador:
         self.al_medir = al_medir          # funcion(niveles) para los vumetros
         self.muestreo = int(config.get("muestreo", 48000))
 
-        self.micro = audio.Microfono(config.get("microfono") or None,
-                                     self.muestreo, BLOQUE)
+        self.canales = [CanalMicro(i, aj, self.muestreo, BLOQUE)
+                        for i, aj in enumerate(config.microfonos())]
         self.pista_a = audio.Pista(self.muestreo, BLOQUE)
         self.pista_b = audio.Pista(self.muestreo, BLOQUE)
         self.efectos = []                 # pistas de un solo uso (jingles)
 
-        # ecualizador de la voz (ver eq.py)
-        self.eq = mod_eq.Ecualizador(self.muestreo,
-                                     activo=bool(config.get("eq_activo", True)))
-        self.eq.cargar(config.get("eq_valores") or {},
-                       config.get("eq_preset", "Plano"))
-
-        self.micro_abierto = False
         self.vol_micro = float(config.get("vol_micro", 0.9))
         self.vol_musica = float(config.get("vol_musica", 0.8))
         self.vol_efectos = float(config.get("vol_efectos", 0.85))
@@ -58,9 +96,6 @@ class Mezclador:
         self.monitor_activo = bool(config.get("monitor_activo", True))
 
         self.ducking = bool(config.get("ducking", True))
-        self.eq.activo = bool(config.get("eq_activo", True))
-        self.eq.cargar(config.get("eq_valores") or {},
-                       config.get("eq_preset", "Plano"))
         self._duck = 1.0                  # factor actual (1 = sin bajar)
 
         self.niveles = {"micro": -60.0, "musica": -60.0, "efectos": -60.0,
@@ -73,16 +108,50 @@ class Mezclador:
         self._hilo = None
         self._lock = threading.Lock()
 
+    # --- atajos al primer microfono, que es el del locutor -----------------
+
+    @property
+    def micro(self):
+        return self.canales[0].micro
+
+    @micro.setter
+    def micro(self, valor):
+        self.canales[0].micro = valor
+
+    @property
+    def eq(self):
+        return self.canales[0].eq
+
+    @property
+    def micro_abierto(self):
+        """True si HAY ALGUN microfono abierto (el ducking mira esto)."""
+        return any(c.abierto for c in self.canales)
+
+    @micro_abierto.setter
+    def micro_abierto(self, valor):
+        self.canales[0].abierto = bool(valor)
+
+    def alternar_micro(self, indice):
+        """Abre o cierra un microfono. Devuelve como quedo."""
+        if 0 <= indice < len(self.canales):
+            c = self.canales[indice]
+            c.abierto = not c.abierto
+            return c.abierto
+        return False
+
     # ------------------------------------------------------------ arranque
 
     def arrancar(self):
         if self.corriendo:
             return True
         self.error = ""
-        self.micro.dispositivo = config.get("microfono") or None
-        if not self.micro.abrir():
-            self.error = "Microfono: " + self.micro.error
-            # seguimos igual: se puede transmitir solo musica
+        fallos = []
+        for c in self.canales:
+            if not c.micro.abrir():
+                fallos.append("%s: %s" % (c.nombre, c.micro.error))
+        if fallos:
+            # se sigue igual: se puede transmitir con los que si abrieron
+            self.error = "  |  ".join(fallos)
 
         if self.monitor_activo and not self._abrir_monitor():
             self.monitor_activo = False   # sin monitor, pero al aire igual
@@ -156,7 +225,8 @@ class Mezclador:
         self.corriendo = False
         if self._hilo:
             self._hilo.join(timeout=2)
-        self.micro.cerrar()
+        for c in self.canales:
+            c.micro.cerrar()
         s, self._salida = self._salida, None
         if s:
             try:
@@ -226,14 +296,16 @@ class Mezclador:
     # ------------------------------------------------------------ la mezcla
 
     def _mezclar(self, cuadros):
-        # --- microfono
-        if self.micro_abierto and self.micro.abierto:
-            mic = self.micro.leer(cuadros)
-            if not self.eq.plano:
-                mic = self.eq.procesar(mic)
-            mic = mic * self.vol_micro
-        else:
-            mic = np.zeros((cuadros, CANALES), dtype=np.float32)
+        # --- microfonos (el del locutor y los de los invitados)
+        mic = np.zeros((cuadros, CANALES), dtype=np.float32)
+        hablando = False
+        for c in self.canales:
+            bloque_mic = c.leer(cuadros)
+            if bloque_mic is not None:
+                mic += bloque_mic
+                if c.nivel > -42.0:
+                    hablando = True
+        mic *= self.vol_micro          # fader general de voces
 
         # --- musica (las dos pistas suenan a la vez durante un cruce)
         musica = self.pista_a.leer(cuadros) + self.pista_b.leer(cuadros)
@@ -250,9 +322,8 @@ class Mezclador:
 
         # --- ducking: la musica se aparta cuando se habla
         objetivo = 1.0
-        if self.ducking and self.micro_abierto:
-            if audio.nivel(mic) > -42.0:
-                objetivo = float(config.get("ducking_nivel", 0.25))
+        if self.ducking and hablando:
+            objetivo = float(config.get("ducking_nivel", 0.25))
         self._duck = self._suavizar(self._duck, objetivo, cuadros)
 
         musica = musica * (self.vol_musica * self._duck)
@@ -263,6 +334,7 @@ class Mezclador:
 
         self.niveles = {
             "micro": audio.nivel(mic),
+            **{"micro%d" % c.indice: c.nivel for c in self.canales},
             "musica": audio.nivel(musica),
             "efectos": audio.nivel(efectos),
             "aire_i": audio.nivel(mezcla[:, 0]),
@@ -298,6 +370,9 @@ class Mezclador:
         self.vol_efectos = float(config.get("vol_efectos", 0.85))
         self.vol_monitor = float(config.get("volumen_monitor", 0.8))
         self.ducking = bool(config.get("ducking", True))
-        self.eq.activo = bool(config.get("eq_activo", True))
-        self.eq.cargar(config.get("eq_valores") or {},
-                       config.get("eq_preset", "Plano"))
+        activo = bool(config.get("eq_activo", True))
+        for aj, c in zip(config.microfonos(), self.canales):
+            c.nombre = aj.get("nombre") or c.nombre
+            c.volumen = float(aj.get("volumen", c.volumen))
+            c.eq.activo = activo
+            c.eq.cargar(aj.get("eq") or {}, aj.get("eq_preset", "Plano"))

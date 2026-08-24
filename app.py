@@ -33,6 +33,7 @@ import grabador as mod_grabador
 import motor
 import procesos
 import servidor
+import ventana_aire
 from estilo import Consejo, px
 
 TITULO = "Voz de Filadelfia - Estudio"
@@ -146,6 +147,8 @@ class App(tk.Tk):
         barra.add_cascade(label="Lista", menu=m)
 
         m = tk.Menu(barra, tearoff=0)
+        m.add_command(label="Monitor de aire...", command=self.abrir_monitor_aire)
+        m.add_separator()
         m.add_command(label="Registro tecnico", command=self.ver_registro)
         m.add_command(label="Estadisticas de oyentes", command=self.ver_estadisticas)
         barra.add_cascade(label="Ver", menu=m)
@@ -162,6 +165,9 @@ class App(tk.Tk):
         self.bind("<F1>", lambda e: self._atajo(self.alternar_microfono))
         self.bind("<F2>", lambda e: self._atajo(self.alternar_grabacion))
         self.bind("<Control-Right>", lambda e: self._atajo(self.siguiente_pista))
+        for n in range(config.MAX_MICROS):
+            self.bind("<Control-Key-%d>" % (n + 1),
+                      lambda e, i=n: self._atajo(lambda: self.alternar_microfono(i)))
 
     def _atajo(self, funcion):
         """
@@ -383,53 +389,80 @@ class App(tk.Tk):
 
         self.vu = {}
         self.faders = {}
-        filas = (("micro", "MICROFONO", "vol_micro"),
-                 ("musica", "MUSICA", "vol_musica"),
-                 ("efectos", "CORTINAS", "vol_efectos"))
-        for i, (clave, texto, ajuste) in enumerate(filas):
-            ttk.Label(caja, text=texto, style="CajaSuave.TLabel",
-                      width=10).grid(row=i, column=0, sticky="w", pady=px(2))
+        self.botones_micro = []
+        fila = 0
+
+        # --- un canal por microfono: el del locutor y los de los invitados
+        for c in self.mezclador.canales:
+            b = ttk.Button(caja, text=c.nombre, style="MicOff.TButton", width=10,
+                           command=lambda n=c.indice: self.alternar_microfono(n))
+            b.grid(row=fila, column=0, sticky="w", pady=px(2))
+            Consejo(b, "Abrir o cerrar %s al aire   (Ctrl+%d)"
+                    % (c.nombre, c.indice + 1))
+            self.botones_micro.append(b)
+
             v = estilo.Vumetro(caja, ancho=px(150), alto=px(11))
-            v.grid(row=i, column=1, sticky="ew", padx=px(6))
+            v.grid(row=fila, column=1, sticky="ew", padx=px(6))
+            self.vu["micro%d" % c.indice] = v
+
+            var = tk.DoubleVar(value=c.volumen * 100)
+            f = ttk.Scale(caja, from_=0, to=100, variable=var,
+                          style="Caja.Horizontal.TScale",
+                          command=lambda val, n=c.indice: self._fader_micro(n, val))
+            f.grid(row=fila, column=2, sticky="ew")
+            f.configure(length=px(90))
+            self.faders["micro%d" % c.indice] = var
+            fila += 1
+
+        # --- musica y cortinas
+        for clave, texto, ajuste in (("musica", "MUSICA", "vol_musica"),
+                                     ("efectos", "CORTINAS", "vol_efectos")):
+            ttk.Label(caja, text=texto, style="CajaSuave.TLabel",
+                      width=10).grid(row=fila, column=0, sticky="w", pady=px(2))
+            v = estilo.Vumetro(caja, ancho=px(150), alto=px(11))
+            v.grid(row=fila, column=1, sticky="ew", padx=px(6))
             self.vu[clave] = v
             var = tk.DoubleVar(value=float(config.get(ajuste, 0.8)) * 100)
-            f = ttk.Scale(caja, from_=0, to=100, variable=var, style="Caja.Horizontal.TScale",
+            f = ttk.Scale(caja, from_=0, to=100, variable=var,
+                          style="Caja.Horizontal.TScale",
                           command=lambda val, a=ajuste: self._fader(a, val))
-            f.grid(row=i, column=2, sticky="ew")
+            f.grid(row=fila, column=2, sticky="ew")
             f.configure(length=px(90))
             self.faders[ajuste] = var
+            fila += 1
 
         ttk.Separator(caja, orient="horizontal").grid(
-            row=3, column=0, columnspan=3, sticky="ew", pady=px(6))
+            row=fila, column=0, columnspan=3, sticky="ew", pady=px(6))
+        fila += 1
 
         ttk.Label(caja, text="AL AIRE", style="Caja.TLabel",
-                  width=10).grid(row=4, column=0, sticky="w")
+                  width=10).grid(row=fila, column=0, sticky="w")
         marco_aire = ttk.Frame(caja, style="Caja.TFrame")
-        marco_aire.grid(row=4, column=1, columnspan=2, sticky="ew", padx=px(6))
+        marco_aire.grid(row=fila, column=1, columnspan=2, sticky="ew", padx=px(6))
         self.vu["aire_i"] = estilo.Vumetro(marco_aire, ancho=px(230), alto=px(9))
         self.vu["aire_i"].pack(fill="x")
         self.vu["aire_d"] = estilo.Vumetro(marco_aire, ancho=px(230), alto=px(9))
         self.vu["aire_d"].pack(fill="x", pady=(px(2), 0))
+        fila += 1
 
         acciones = ttk.Frame(caja, style="Caja.TFrame")
-        acciones.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(px(8), 0))
-        self.btn_micro = ttk.Button(acciones, text="ABRIR MICROFONO",
-                                    style="MicOff.TButton",
-                                    command=self.alternar_microfono)
-        self.btn_micro.pack(side="left")
-        Consejo(self.btn_micro, "Abrir o cerrar el microfono al aire   (F1)")
+        acciones.grid(row=fila, column=0, columnspan=3, sticky="ew", pady=(px(8), 0))
         self.var_ducking = tk.BooleanVar(value=bool(config.get("ducking", True)))
         ttk.Checkbutton(acciones, text="Bajar musica al hablar",
                         variable=self.var_ducking, style="Caja.TCheckbutton",
-                        command=self._cambio_ducking).pack(side="left", padx=px(10))
+                        command=self._cambio_ducking).pack(side="left")
+        fila += 1
+        # el primero es "el" microfono para los atajos y para el resto del codigo
+        self.btn_micro = self.botones_micro[0]
 
         # cortinas: sonidos cortos listos para lanzar encima de lo que suene
         ttk.Label(caja, text="CORTINAS   ·   clic para lanzar, clic derecho "
                               "para asignar o renombrar",
-                  style="CajaSuave.TLabel").grid(row=6, column=0, columnspan=3,
+                  style="CajaSuave.TLabel").grid(row=fila, column=0, columnspan=3,
                                                  sticky="w", pady=(px(8), px(2)))
+        fila += 1
         cort = ttk.Frame(caja, style="Caja.TFrame")
-        cort.grid(row=7, column=0, columnspan=3, sticky="ew")
+        cort.grid(row=fila, column=0, columnspan=3, sticky="ew")
         self.botones_cortina = []
         self.cortinas = [None] * CORTINAS
         self.nombres_cortina = [""] * CORTINAS
@@ -621,23 +654,45 @@ class App(tk.Tk):
         else:
             self.mensaje(self.grabador.detalle or "No se pudo grabar.")
 
-    def alternar_microfono(self):
+    def alternar_microfono(self, indice=0):
+        """Abre o cierra uno de los microfonos de la mesa."""
         if not self.mezclador.corriendo:
             self.mezclador.arrancar()
-        if not self.mezclador.micro.abierto:
+        if not (0 <= indice < len(self.mezclador.canales)):
+            return
+        canal = self.mezclador.canales[indice]
+        if not canal.micro.abierto:
             messagebox.showwarning(
                 "Microfono",
-                "No se pudo abrir el microfono.\n\n%s\n\n"
-                "Revisa cual esta elegido en Configuracion."
-                % (self.mezclador.micro.error or "-"), parent=self)
+                "No se pudo abrir %s.\n\n%s\n\n"
+                "Revisa cual tiene asignado en Configuracion > Audio."
+                % (canal.nombre, canal.error or "-"), parent=self)
             return
-        self.mezclador.micro_abierto = not self.mezclador.micro_abierto
-        if self.mezclador.micro_abierto:
-            self.btn_micro.configure(text="MICROFONO ABIERTO", style="MicOn.TButton")
-            self.mensaje("Microfono abierto.")
-        else:
-            self.btn_micro.configure(text="ABRIR MICROFONO", style="MicOff.TButton")
-            self.mensaje("Microfono cerrado.")
+        abierto = self.mezclador.alternar_micro(indice)
+        self._pintar_micros()
+        self.mensaje("%s %s." % (canal.nombre,
+                                 "abierto" if abierto else "cerrado"))
+
+    def _pintar_micros(self):
+        """Rojo el que este al aire; el resto, apagados."""
+        for c in self.mezclador.canales:
+            if c.indice >= len(self.botones_micro):
+                continue
+            b = self.botones_micro[c.indice]
+            if c.abierto:
+                b.configure(text=c.nombre.upper(), style="MicOn.TButton")
+            else:
+                b.configure(text=c.nombre, style="MicOff.TButton")
+
+    def _fader_micro(self, indice, valor):
+        """El volumen de un microfono, guardado en su ficha."""
+        if not (0 <= indice < len(self.mezclador.canales)):
+            return
+        self.mezclador.canales[indice].volumen = float(valor) / 100.0
+        micros = config.microfonos()
+        if indice < len(micros):
+            micros[indice]["volumen"] = round(float(valor) / 100.0, 3)
+            config.guardar_microfonos(micros)
 
     def poner_titulo(self):
         titulo = self.var_titulo.get().strip()
@@ -954,6 +1009,7 @@ class App(tk.Tk):
                 self.cortinas[i] = r
             self.nombres_cortina[i] = (nombres[i] if i < len(nombres) else "") or ""
             self._pintar_cortina(i)
+        self._pintar_micros()
         carpeta = config.get("carpeta_musica")
         if carpeta and os.path.isdir(carpeta):
             self.biblio = biblioteca.Biblioteca(carpeta)
@@ -992,6 +1048,24 @@ class App(tk.Tk):
             os.startfile(str(config.CARPETA_GRABA))
         except Exception as e:
             messagebox.showerror("Grabaciones", str(e), parent=self)
+
+    def abrir_monitor_aire(self):
+        """La ventanita que dice si la emisora esta sonando de verdad."""
+        v = getattr(self, "_ventana_aire", None)
+        if v is not None:
+            try:
+                if v.winfo_exists():
+                    v.deiconify()
+                    v.lift()
+                    return
+            except tk.TclError:
+                pass
+        if not config.get("host"):
+            messagebox.showwarning("Monitor de aire",
+                                   "Primero hay que configurar el servidor.",
+                                   parent=self)
+            return
+        self._ventana_aire = ventana_aire.VentanaAire(self)
 
     def ver_registro(self):
         v = tk.Toplevel(self)
@@ -1048,6 +1122,12 @@ class App(tk.Tk):
                     "ESTAS AL AIRE.\n\nSi cierras, se corta la transmision.\n\n"
                     "Seguro que quieres salir?", parent=self):
                 return
+        v = getattr(self, "_ventana_aire", None)
+        if v is not None:
+            try:
+                v.cerrar()
+            except Exception:
+                pass
         if self.grabador.grabando:
             self.grabador.detener()
         try:
@@ -1190,65 +1270,91 @@ class DialogoConfig(tk.Toplevel):
         entradas = [n for _, n, _, _ in audio.listar(entrada=True)]
         salidas = [n for _, n, _, _ in audio.listar(entrada=False)]
 
-        ttk.Label(f, text="Microfono:").grid(row=0, column=0, sticky="w", pady=px(4))
-        self.var_micro = tk.StringVar(value=config.get("microfono"))
-        ttk.Combobox(f, textvariable=self.var_micro, values=entradas,
-                     width=40, state="readonly").grid(row=0, column=1, sticky="ew")
+        ttk.Label(f, text="MICROFONOS   ·   uno por cada persona al aire",
+                  style="Suave.TLabel").grid(row=0, column=0, columnspan=2,
+                                             sticky="w")
+        self.vars_micros = []
+        micros = config.microfonos()
+        while len(micros) < config.MAX_MICROS:      # huecos para invitados
+            micros.append({"nombre": "Micro %d" % (len(micros) + 1),
+                           "dispositivo": "", "volumen": 0.9,
+                           "eq_preset": "Plano", "eq": {}})
+        for i, m in enumerate(micros[:config.MAX_MICROS]):
+            fila_m = ttk.Frame(f)
+            fila_m.grid(row=1 + i, column=0, columnspan=2, sticky="ew", pady=px(2))
+            ttk.Label(fila_m, text="%d." % (i + 1), width=2).pack(side="left")
+            v_nombre = tk.StringVar(value=m.get("nombre") or "")
+            ttk.Entry(fila_m, textvariable=v_nombre, width=12).pack(side="left")
+            v_disp = tk.StringVar(value=m.get("dispositivo") or "")
+            ttk.Combobox(fila_m, textvariable=v_disp, values=[""] + entradas,
+                         width=34, state="readonly").pack(side="left", padx=px(6))
+            self.vars_micros.append((v_nombre, v_disp))
+        ttk.Label(f, text="Deja el aparato en blanco para no usar ese canal. "
+                          "Los microfonos se aplican al reiniciar la aplicacion.",
+                  style="Suave.TLabel").grid(row=1 + config.MAX_MICROS, column=0,
+                                             columnspan=2, sticky="w",
+                                             pady=(px(2), px(8)))
 
-        ttk.Label(f, text="Monitor (auriculares):").grid(row=1, column=0, sticky="w",
-                                                         pady=px(4))
+        base = 2 + config.MAX_MICROS
+        ttk.Label(f, text="Monitor (auriculares):").grid(row=base, column=0,
+                                                         sticky="w", pady=px(4))
         self.var_monitor = tk.StringVar(value=config.get("monitor"))
         ttk.Combobox(f, textvariable=self.var_monitor, values=salidas,
-                     width=40, state="readonly").grid(row=1, column=1, sticky="ew")
+                     width=40, state="readonly").grid(row=base, column=1, sticky="ew")
 
         self.var_mon_act = tk.BooleanVar(value=bool(config.get("monitor_activo")))
         ttk.Checkbutton(f, text="Escuchar por los auriculares lo que sale al aire",
-                        variable=self.var_mon_act).grid(row=2, column=0, columnspan=2,
+                        variable=self.var_mon_act).grid(row=base + 1, column=0,
+                                                        columnspan=2,
                                                         sticky="w", pady=px(6))
 
         fila_prueba = ttk.Frame(f)
-        fila_prueba.grid(row=3, column=0, columnspan=2, sticky="w")
+        fila_prueba.grid(row=base + 2, column=0, columnspan=2, sticky="w")
         ttk.Button(fila_prueba, text="Probar los auriculares",
                    command=self.probar_monitor).pack(side="left")
         self.lbl_monitor = ttk.Label(fila_prueba, text="", style="Suave.TLabel")
         self.lbl_monitor.pack(side="left", padx=px(8))
         ttk.Label(f, text="Los auriculares Bluetooth funcionan: Windows convierte "
                           "el muestreo por su cuenta.",
-                  style="Suave.TLabel").grid(row=4, column=0, columnspan=2,
+                  style="Suave.TLabel").grid(row=base + 3, column=0, columnspan=2,
                                              sticky="w", pady=(px(2), 0))
 
-        ttk.Separator(f, orient="horizontal").grid(row=5, column=0, columnspan=2,
-                                                   sticky="ew", pady=px(8))
+        ttk.Separator(f, orient="horizontal").grid(row=base + 4, column=0,
+                                                   columnspan=2, sticky="ew",
+                                                   pady=px(8))
         self.var_duck = tk.BooleanVar(value=bool(config.get("ducking")))
         ttk.Checkbutton(f, text="Bajar la musica automaticamente al hablar",
-                        variable=self.var_duck).grid(row=6, column=0, columnspan=2,
-                                                     sticky="w")
-        ttk.Label(f, text="Cuanto baja:").grid(row=7, column=0, sticky="w", pady=px(4))
+                        variable=self.var_duck).grid(row=base + 5, column=0,
+                                                     columnspan=2, sticky="w")
+        ttk.Label(f, text="Cuanto baja:").grid(row=base + 6, column=0, sticky="w",
+                                               pady=px(4))
         self.var_duck_niv = tk.DoubleVar(value=float(config.get("ducking_nivel")) * 100)
         ttk.Scale(f, from_=5, to=80, variable=self.var_duck_niv,
-                  length=px(200)).grid(row=7, column=1, sticky="w")
+                  length=px(200)).grid(row=base + 6, column=1, sticky="w")
 
-        ttk.Separator(f, orient="horizontal").grid(row=8, column=0, columnspan=2,
-                                                   sticky="ew", pady=px(8))
-        ttk.Label(f, text="Barra espaciadora:").grid(row=9, column=0, sticky="w",
-                                                     pady=px(4))
+        ttk.Separator(f, orient="horizontal").grid(row=base + 7, column=0,
+                                                   columnspan=2, sticky="ew",
+                                                   pady=px(8))
+        ttk.Label(f, text="Barra espaciadora:").grid(row=base + 8, column=0,
+                                                     sticky="w", pady=px(4))
         self.var_espacio = tk.StringVar(
             value=ESPACIO_TEXTOS.get(config.get("tecla_espacio", ESPACIO_MICRO),
                                      ESPACIO_TEXTOS[ESPACIO_MICRO]))
         ttk.Combobox(f, textvariable=self.var_espacio, state="readonly", width=30,
                      values=[ESPACIO_TEXTOS[k] for k in
                              (ESPACIO_MICRO, ESPACIO_PLAY, ESPACIO_NADA)]).grid(
-            row=9, column=1, sticky="w")
+            row=base + 8, column=1, sticky="w")
         ttk.Label(f, text="F1 abre el microfono y F2 graba, elijas lo que elijas. "
                           "Mientras se escribe en un campo, la barra no hace nada.",
-                  style="Suave.TLabel").grid(row=10, column=0, columnspan=2,
+                  style="Suave.TLabel").grid(row=base + 9, column=0, columnspan=2,
                                              sticky="w")
 
-        ttk.Separator(f, orient="horizontal").grid(row=11, column=0, columnspan=2,
-                                                   sticky="ew", pady=px(8))
+        ttk.Separator(f, orient="horizontal").grid(row=base + 10, column=0,
+                                                   columnspan=2, sticky="ew",
+                                                   pady=px(8))
         ttk.Label(f, text="Cambiar de microfono o de auriculares exige volver a "
                           "salir al aire.",
-                  style="Suave.TLabel").grid(row=12, column=0, columnspan=2,
+                  style="Suave.TLabel").grid(row=base + 11, column=0, columnspan=2,
                                              sticky="w")
 
     def probar_monitor(self):
@@ -1276,17 +1382,33 @@ class DialogoConfig(tk.Toplevel):
                         command=self._refrescar_eq).grid(
             row=0, column=0, columnspan=3, sticky="w")
 
-        ttk.Label(f, text="Ajuste:").grid(row=1, column=0, sticky="w", pady=px(6))
+        # cada microfono lleva su propio ajuste: la voz de un invitado casi
+        # nunca necesita lo mismo que la del locutor
+        micros = config.microfonos()
+        self.nombres_micros_eq = [m.get("nombre") or ("Micro %d" % (i + 1))
+                                  for i, m in enumerate(micros)]
+        marco_sel = ttk.Frame(f)
+        marco_sel.grid(row=1, column=0, columnspan=3, sticky="w", pady=px(6))
+        ttk.Label(marco_sel, text="Ajustando:").pack(side="left")
+        self.var_micro_eq = tk.StringVar(value=self.nombres_micros_eq[0])
+        cb_micro = ttk.Combobox(marco_sel, textvariable=self.var_micro_eq,
+                                state="readonly", width=16,
+                                values=self.nombres_micros_eq)
+        cb_micro.pack(side="left", padx=px(6))
+        cb_micro.bind("<<ComboboxSelected>>", lambda e: self._cambiar_micro_eq())
+
+        ttk.Label(f, text="Ajuste:").grid(row=2, column=0, sticky="w", pady=px(6))
         self.var_eq_preset = tk.StringVar(value=config.get("eq_preset", "Plano"))
         cb = ttk.Combobox(f, textvariable=self.var_eq_preset, state="readonly",
                           width=22, values=mod_eq.ORDEN_PRESETS)
-        cb.grid(row=1, column=1, sticky="w", pady=px(6))
+        cb.grid(row=2, column=1, sticky="w", pady=px(6))
         cb.bind("<<ComboboxSelected>>", lambda e: self._cargar_preset_eq())
 
         valores = dict(mod_eq.PRESETS["Plano"])
-        valores.update(config.get("eq_valores") or {})
+        valores.update((micros[0].get("eq") or {}))
+        self.var_eq_preset.set(micros[0].get("eq_preset") or "Plano")
         self.vars_eq, self.lbls_eq = {}, {}
-        fila = 2
+        fila = 3
         for clave, etiqueta, frec, _, _ in mod_eq.BANDAS:
             hz = "%d Hz" % frec if frec < 1000 else "%.0f kHz" % (frec / 1000.0)
             ttk.Label(f, text="%s  (%s)" % (etiqueta, hz)).grid(
@@ -1326,6 +1448,25 @@ class DialogoConfig(tk.Toplevel):
             row=fila, column=0, columnspan=3, sticky="w")
         self._refrescar_eq()
 
+    def _indice_eq(self):
+        try:
+            return self.nombres_micros_eq.index(self.var_micro_eq.get())
+        except ValueError:
+            return 0
+
+    def _cambiar_micro_eq(self):
+        """Al cambiar de microfono, se cargan SUS ajustes en los deslizadores."""
+        micros = config.microfonos()
+        i = self._indice_eq()
+        m = micros[i] if i < len(micros) else {}
+        base = dict(mod_eq.PRESETS["Plano"])
+        base.update(m.get("eq") or {})
+        for clave, var in self.vars_eq.items():
+            var.set(float(base.get(clave, 0)))
+        self.var_corte.set(bool(base.get("corte_grave", True)))
+        self.var_eq_preset.set(m.get("eq_preset") or "Plano")
+        self._refrescar_eq()
+
     def _valores_eq(self):
         v = {c: round(float(var.get()), 1) for c, var in self.vars_eq.items()}
         v["corte_grave"] = bool(self.var_corte.get())
@@ -1356,9 +1497,13 @@ class DialogoConfig(tk.Toplevel):
                 valores, int(config.get("muestreo", 48000))))
         except Exception:
             pass
-        config.guardar({"eq_activo": self.var_eq_activo.get(),
-                        "eq_preset": self.var_eq_preset.get(),
-                        "eq_valores": valores})
+        config.guardar({"eq_activo": self.var_eq_activo.get()})
+        micros = config.microfonos()
+        i = self._indice_eq()
+        if i < len(micros):
+            micros[i]["eq"] = valores
+            micros[i]["eq_preset"] = self.var_eq_preset.get()
+            config.guardar_microfonos(micros)
         self.padre.mezclador.aplicar_ajustes()
 
     def _guardar_mi_gusto(self):
@@ -1370,16 +1515,21 @@ class DialogoConfig(tk.Toplevel):
                             "Guardado como 'A mi gusto'.", parent=self)
 
     def _escuchar_micro(self):
-        """Abre el microfono con el monitor para oirse mientras se ajusta."""
+        """Abre ESE microfono con el monitor, para oirse mientras se ajusta."""
         m = self.padre.mezclador
         if not m.corriendo:
             m.arrancar()
-        if not m.micro.abierto:
-            messagebox.showwarning("Microfono", m.micro.error or
-                                   "No se pudo abrir el microfono.", parent=self)
+        i = self._indice_eq()
+        if i >= len(m.canales):
             return
-        m.micro_abierto = True
-        self.padre.btn_micro.configure(text="MICROFONO ABIERTO", style="MicOn.TButton")
+        canal = m.canales[i]
+        if not canal.micro.abierto:
+            messagebox.showwarning("Microfono", canal.error or
+                                   "No se pudo abrir %s." % canal.nombre,
+                                   parent=self)
+            return
+        canal.abierto = True
+        self.padre._pintar_micros()
         messagebox.showinfo("Microfono",
                             "Microfono abierto. Habla y mueve las bandas.",
                             parent=self)
@@ -1451,9 +1601,20 @@ class DialogoConfig(tk.Toplevel):
                               else "icecast")
         datos["bitrate"] = int(self.var_bitrate.get())
         datos["codec"] = self.var_codec.get()
-        datos["microfono"] = self.var_micro.get()
+
         datos["monitor"] = self.var_monitor.get()
         datos["monitor_activo"] = self.var_mon_act.get()
+        micros = config.microfonos()
+        while len(micros) < len(self.vars_micros):
+            micros.append({"nombre": "", "dispositivo": "", "volumen": 0.9,
+                           "eq_preset": "Plano", "eq": {}})
+        for i, (v_nombre, v_disp) in enumerate(self.vars_micros):
+            micros[i]["nombre"] = (v_nombre.get().strip()
+                                   or "Micro %d" % (i + 1))[:14]
+            micros[i]["dispositivo"] = v_disp.get().strip()
+        # los canales sin aparato no se crean, pero se conserva su ficha
+        config.guardar_microfonos(micros)
+
         inverso = {v: k for k, v in ESPACIO_TEXTOS.items()}
         datos["tecla_espacio"] = inverso.get(self.var_espacio.get(), ESPACIO_MICRO)
         datos["ducking"] = self.var_duck.get()

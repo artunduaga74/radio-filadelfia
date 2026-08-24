@@ -62,7 +62,20 @@ DEFECTOS = {
     "descripcion": "",
 
     # --- audio local
-    "microfono": "",            # nombre del dispositivo de entrada
+    # Varios microfonos: uno para el locutor y los demas para invitados.
+    # Cada uno con su aparato, su volumen y su ecualizador.
+    "microfonos": [
+        {"nombre": "Micro 1", "dispositivo": "", "volumen": 0.9,
+         "eq_preset": "Voz clara",
+         "eq": {"graves": -1, "medios": -3, "presencia": 4, "aire": 2,
+                "corte_grave": True}},
+        {"nombre": "Invitado", "dispositivo": "", "volumen": 0.9,
+         "eq_preset": "Voz clara",
+         "eq": {"graves": -1, "medios": -3, "presencia": 4, "aire": 2,
+                "corte_grave": True}},
+    ],
+
+    "microfono": "",            # (heredado) el de antes, se migra al primero
     "monitor": "",              # dispositivo de salida para auriculares
     "api_audio": "Windows WASAPI",
     "monitor_activo": True,
@@ -78,6 +91,10 @@ DEFECTOS = {
     "ducking_salida_ms": 700,
 
     # --- carpetas de trabajo
+    # --- monitor de aire (ventana aparte)
+    "aire_siempre_visible": True,
+    "aire_posicion": "",
+
     # --- teclado
     # Que hace la barra espaciadora: "microfono" | "reproducir" | "nada"
     "tecla_espacio": "microfono",
@@ -188,6 +205,59 @@ def guardar_clave(nombre, valor):
 def configurado():
     """¿Hay lo mínimo para salir al aire?"""
     return bool(get("host")) and bool(clave("clave_fuente"))
+
+
+MAX_MICROS = 4          # tope de microfonos que admite la mesa
+
+
+def _crudo():
+    """Lo que hay escrito en ajustes.json, sin mezclar con los valores de fabrica."""
+    try:
+        if ARCHIVO_AJUSTES.exists():
+            d = json.loads(ARCHIVO_AJUSTES.read_text(encoding="utf-8"))
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
+def microfonos():
+    """
+    La lista de microfonos, ya saneada.
+
+    Migra la configuracion antigua (un solo microfono en las claves
+    `microfono` / `vol_micro` / `eq_valores`) al primero de la lista, para que
+    quien ya tenia la aplicacion no pierda sus ajustes.
+    """
+    datos = cargar()
+    # OJO: hay que mirar el ARCHIVO, no `cargar()`: los valores de fabrica ya
+    # traen "microfonos", asi que preguntarselos a `cargar()` nunca detectaria
+    # una configuracion antigua y se perderia el microfono que ya tenia puesto.
+    lista = _crudo().get("microfonos")
+    if not isinstance(lista, list) or not lista:
+        lista = [dict(m) for m in DEFECTOS["microfonos"]]
+        if datos.get("microfono"):                       # configuracion vieja
+            lista[0]["dispositivo"] = datos["microfono"]
+            lista[0]["volumen"] = float(datos.get("vol_micro", 0.9))
+            if datos.get("eq_valores"):
+                lista[0]["eq"] = dict(datos["eq_valores"])
+                lista[0]["eq_preset"] = datos.get("eq_preset", "Plano")
+    fuera = []
+    for i, m in enumerate(lista[:MAX_MICROS]):
+        if not isinstance(m, dict):
+            continue
+        fuera.append({
+            "nombre": (m.get("nombre") or "Micro %d" % (i + 1))[:14],
+            "dispositivo": m.get("dispositivo") or "",
+            "volumen": float(m.get("volumen", 0.9)),
+            "eq_preset": m.get("eq_preset") or "Plano",
+            "eq": dict(m.get("eq") or {}),
+        })
+    return fuera or [dict(m) for m in DEFECTOS["microfonos"]]
+
+
+def guardar_microfonos(lista):
+    guardar({"microfonos": [dict(m) for m in lista[:MAX_MICROS]]})
 
 
 def asegurar_carpetas():

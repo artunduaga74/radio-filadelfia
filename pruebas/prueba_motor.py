@@ -215,6 +215,107 @@ for i_dev, nombre_dev, api_dev, ch_dev in salidas:
             fallo = str(e)[:42]
     check("se abre a 48 kHz: %s" % nombre_dev[:26], abierto, fallo)
 
+print("")
+print("=== 10. Varios microfonos (locutor + invitados) ===")
+m4 = motor.Mezclador(emisor=None)
+m4.monitor_activo = False
+check("se crean los canales configurados", len(m4.canales) >= 2,
+      "%d canales" % len(m4.canales))
+check("cada uno con su nombre",
+      all(c.nombre for c in m4.canales),
+      " / ".join(c.nombre for c in m4.canales))
+
+for c in m4.canales:
+    c.micro = MicroFalso(0.5)
+    c.abierto = False
+    c.volumen = 1.0
+m4.vol_micro = 1.0
+
+silencio = rms(m4._mezclar(1024))
+check("con todos cerrados no entra voz", silencio < 0.01, "rms=%.4f" % silencio)
+
+m4.canales[0].abierto = True
+for _ in range(3):
+    m4._mezclar(1024)
+uno = rms(m4._mezclar(1024))
+check("con uno abierto se oye", uno > 0.2, "rms=%.3f" % uno)
+check("el vumetro del 1 sube", m4.niveles["micro0"] > -20,
+      "%.1f dB" % m4.niveles["micro0"])
+check("el del 2 sigue apagado", m4.niveles["micro1"] <= -60,
+      "%.1f dB" % m4.niveles["micro1"])
+
+m4.canales[1].abierto = True
+for _ in range(3):
+    m4._mezclar(1024)
+dos = rms(m4._mezclar(1024))
+check("con los dos abiertos suena mas", dos > uno * 1.5,
+      "%.3f -> %.3f" % (uno, dos))
+check("los dos vumetros marcan",
+      m4.niveles["micro0"] > -20 and m4.niveles["micro1"] > -20,
+      "%.1f / %.1f dB" % (m4.niveles["micro0"], m4.niveles["micro1"]))
+
+m4.canales[0].abierto = False
+for _ in range(3):
+    m4._mezclar(1024)
+solo2 = rms(m4._mezclar(1024))
+check("cerrar el 1 no calla al 2", solo2 > 0.2, "rms=%.3f" % solo2)
+check("micro_abierto avisa si hay ALGUNO abierto", m4.micro_abierto is True)
+m4.canales[1].abierto = False
+check("y es False con todos cerrados", m4.micro_abierto is False)
+
+print("")
+print("=== 11. El invitado tambien baja la musica (ducking) ===")
+m5 = motor.Mezclador(emisor=None)
+m5.monitor_activo = False
+m5.ducking = True
+m5.pista_a.cargar(TONO)
+m5.pista_a.reproducir()
+for c in m5.canales:
+    c.micro = MicroFalso(0.0)
+    c.abierto = False
+    c.volumen = 1.0
+for _ in range(30):
+    m5._mezclar(1024)
+check("callados, la musica esta entera", m5._duck > 0.95, "factor=%.2f" % m5._duck)
+
+# habla SOLO el invitado (el segundo canal)
+m5.canales[1].micro = MicroFalso(0.7)
+m5.canales[1].abierto = True
+for _ in range(200):
+    m5._mezclar(1024)
+check("si habla el invitado, la musica baja igual", m5._duck < 0.4,
+      "factor=%.2f" % m5._duck)
+
+print("")
+print("=== 12. Cada microfono con su propio ecualizador ===")
+m6 = motor.Mezclador(emisor=None)
+m6.monitor_activo = False
+m6.canales[0].eq.cargar({"graves": 0, "medios": 0, "presencia": 0, "aire": 0,
+                         "corte_grave": False})
+m6.canales[1].eq.cargar({"graves": 0, "medios": -12, "presencia": 0, "aire": 0,
+                         "corte_grave": False})
+check("son ecualizadores distintos", m6.canales[0].eq is not m6.canales[1].eq)
+check("el 1 queda plano", m6.canales[0].eq.plano)
+check("y el 2 no", not m6.canales[1].eq.plano)
+
+# un tono de 400 Hz por los dos: el segundo debe salir mas bajo
+for c in m6.canales:
+    c.micro = MicroFalso(0.5, hz=400.0)
+    c.volumen = 1.0
+    c.abierto = False
+m6.vol_micro = 1.0
+m6.canales[0].abierto = True
+for _ in range(10):
+    m6._mezclar(1024)
+n1 = m6.niveles["micro0"]
+m6.canales[0].abierto = False
+m6.canales[1].abierto = True
+for _ in range(10):
+    m6._mezclar(1024)
+n2 = m6.niveles["micro1"]
+check("el ecualizador del 2 le baja los 400 Hz", n1 - n2 > 8,
+      "%.1f dB vs %.1f dB" % (n1, n2))
+
 print("\n" + "=" * 60)
 print("  %d comprobaciones OK, %d fallos" % (ok, len(fallos)))
 if fallos:
