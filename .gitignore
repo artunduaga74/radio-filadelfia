@@ -20,3 +20,12 @@ venv/
 .claude/
 Thumbs.db
 desktop.ini
+
+# musica y audios de la emisora: son contenido, no codigo, y muchos
+# tienen derechos de autor. Se quedan en el disco, fuera del repositorio.
+audios/
+musica/
+cortinas/
+*.mp3
+*.wav
+!pruebas/medios/*.wav
