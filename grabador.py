@@ -98,7 +98,7 @@ class Grabador:
             if self._proc and self._proc.poll() is None:
                 return True
             config.asegurar_carpetas()
-            destino = ruta or (config.CARPETA_GRABA / nombre_sugerido(titulo))
+            destino = ruta or (config.carpeta_graba() / nombre_sugerido(titulo))
             aj = config.cargar()
             cmd = [FFMPEG, "-hide_banner", "-loglevel", "warning", "-y",
                    "-f", "f32le", "-ar", str(int(aj["muestreo"])),

@@ -416,6 +416,36 @@ i_ar = cmd.index("-ar", cmd.index("libmp3lame"))
 check("se puede pedir mono", cmd[i_ar + 3] == "1", cmd[i_ar + 3])
 config.guardar({"emitir_mono": False})
 
+print("")
+print("=== 19. Donde se guardan las grabaciones ===")
+por_defecto = config.CARPETA_GRABA
+config.guardar({"carpeta_grabaciones": ""})
+check("en blanco usa la de junto a la aplicacion",
+      config.carpeta_graba() == por_defecto, str(config.carpeta_graba().name))
+
+elegida = pruebas / "Mis programas"
+config.guardar({"carpeta_grabaciones": str(elegida)})
+check("respeta la carpeta elegida", config.carpeta_graba() == elegida,
+      str(config.carpeta_graba().name))
+check("y la crea si no existia", config.carpeta_graba().exists())
+
+config.guardar({"carpeta_grabaciones": "Z:/no/existe/de/ninguna/manera"})
+check("si la carpeta ya no esta (un USB fuera), vuelve a la de siempre",
+      config.carpeta_graba() == por_defecto, str(config.carpeta_graba().name))
+
+config.guardar({"carpeta_grabaciones": str(elegida), "muestreo": FS})
+g3 = mod_grabador.Grabador()
+check("el grabador arranca en la elegida", g3.iniciar("donde toca"))
+silencio = np.zeros((1024, 2), dtype=np.float32)
+for _ in range(15):
+    g3.recibir(silencio)
+    time.sleep(1024.0 / FS)
+guardado = g3.detener()
+check("y el archivo cae ahi", Path(guardado).parent == elegida,
+      str(Path(guardado).parent.name))
+check("y existe de verdad", Path(guardado).exists())
+config.guardar({"carpeta_grabaciones": ""})
+
 print("\n" + "=" * 62)
 print("  %d comprobaciones OK, %d fallos" % (ok, len(fallos)))
 if fallos:

@@ -106,7 +106,7 @@ eq.py              cadena de voz: ecualizador, compresor, puerta y limitador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           295 comprobaciones automáticas (5 archivos)
+pruebas/           302 comprobaciones automáticas (5 archivos)
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -178,6 +178,24 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **Carpeta de grabaciones configurable + repositorio subido.**
+  Nuevo `config.carpeta_graba()`: si el usuario elige una carpeta, esa; si la
+  deja en blanco, la de junto a la aplicación (que es lo que la mantiene
+  portable). **Si la carpeta elegida deja de existir** —un USB desenchufado, un
+  disco de red caído— **vuelve sola a la de siempre en vez de fallar en medio
+  de un programa**, que es cuando peor vendría. Campo con botón de examinar en
+  Configuración → Carpetas.
+  **El repositorio ya está en GitHub**: `artunduaga74/radio-filadelfia`,
+  privado. ⚠️ En el primer envío **se coló un MP3 de 4.4 MB** de la carpeta
+  `audios/`: música con derechos, que no pinta nada en un repositorio de
+  código. Se sacó del control de versiones (el archivo sigue en el disco) y el
+  `.gitignore` pasa a excluir `audios/`, `musica/`, `cortinas/` y cualquier
+  mp3/wav, salvo los dos tonos de `pruebas/medios/`, que sí hacen falta para
+  las comprobaciones. **Sigue en el historial de los commits anteriores**;
+  limpiarlo del todo exigiría reescribir el historial y forzar el envío, y eso
+  se dejó a decisión del usuario.
+  302 comprobaciones en verde. — Estado: ✅ — Siguiente: lo que pida el uso real.
 
 - [2026-08-24] **Retoques de pantalla y volumen de emisión.**
   El usuario mandó capturas anotadas. Cuatro cosas:

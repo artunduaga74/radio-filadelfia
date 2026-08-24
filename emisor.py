@@ -206,7 +206,7 @@ class Emisor:
             self.grabacion = None
             if aj.get("grabar_al_aire", True):
                 nombre = datetime.now().strftime("programa_%Y-%m-%d_%H-%M.mp3")
-                self.grabacion = config.CARPETA_GRABA / nombre
+                self.grabacion = config.carpeta_graba() / nombre
 
             por_icy = aj.get("protocolo") == "shoutcast_v1"
             self._poner(CONECTANDO, "")

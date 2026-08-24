@@ -132,6 +132,9 @@ DEFECTOS = {
     "bitrate_grabacion": 192,
 
     "carpeta_musica": "",
+    # Donde se guardan las grabaciones. En blanco = la carpeta "grabaciones"
+    # junto a la aplicacion, que es lo que la mantiene portable.
+    "carpeta_grabaciones": "",
     "carpeta_efectos": "",
     "cortinas": [None, None, None, None],        # el audio de cada boton
     "cortinas_nombres": ["", "", "", ""],        # como se lee cada boton
@@ -290,8 +293,26 @@ def guardar_microfonos(lista):
     guardar({"microfonos": [dict(m) for m in lista[:MAX_MICROS]]})
 
 
+def carpeta_graba():
+    """
+    Donde van las grabaciones. Si el usuario eligio una, esa; si no, la de al
+    lado de la aplicacion. Si la elegida ya no existe y no se puede crear (un
+    USB desconectado, por ejemplo), se vuelve a la de siempre en vez de fallar
+    en medio de un programa.
+    """
+    elegida = (cargar().get("carpeta_grabaciones") or "").strip()
+    if elegida:
+        ruta = Path(elegida)
+        try:
+            ruta.mkdir(parents=True, exist_ok=True)
+            return ruta
+        except Exception:
+            pass
+    return CARPETA_GRABA
+
+
 def asegurar_carpetas():
-    for c in (CARPETA_DATOS, CARPETA_GRABA):
+    for c in (CARPETA_DATOS, carpeta_graba()):
         try:
             c.mkdir(parents=True, exist_ok=True)
         except Exception:

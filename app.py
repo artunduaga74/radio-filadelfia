@@ -1235,7 +1235,7 @@ class App(tk.Tk):
     def abrir_grabaciones(self):
         config.asegurar_carpetas()
         try:
-            os.startfile(str(config.CARPETA_GRABA))
+            os.startfile(str(config.carpeta_graba()))
         except Exception as e:
             messagebox.showerror("Grabaciones", str(e), parent=self)
 
@@ -1974,16 +1974,29 @@ class DialogoConfig(tk.Toplevel):
         ttk.Button(f, text="...", width=3,
                    command=lambda: self._elegir(self.var_carpeta)).grid(row=0, column=2)
 
+        ttk.Label(f, text="Carpeta de grabaciones:").grid(row=1, column=0,
+                                                          sticky="w", pady=px(4))
+        self.var_carpeta_grab = tk.StringVar(
+            value=config.get("carpeta_grabaciones"))
+        ttk.Entry(f, textvariable=self.var_carpeta_grab, width=38).grid(
+            row=1, column=1, sticky="ew")
+        ttk.Button(f, text="...", width=3,
+                   command=lambda: self._elegir(self.var_carpeta_grab)).grid(
+            row=1, column=2)
+        ttk.Label(f, text="En blanco = junto a la aplicacion (%s)."
+                          % config.CARPETA_GRABA.name,
+                  style="Suave.TLabel").grid(row=2, column=0, columnspan=3,
+                                             sticky="w")
+
         self.var_grabar = tk.BooleanVar(value=bool(config.get("grabar_al_aire")))
-        ttk.Checkbutton(f, text="Grabar en el disco todo lo que salga al aire",
-                        variable=self.var_grabar).grid(row=1, column=0, columnspan=3,
-                                                       sticky="w", pady=px(8))
-        ttk.Label(f, text="Se guarda en: %s" % config.CARPETA_GRABA,
-                  style="Suave.TLabel").grid(row=2, column=0, columnspan=3, sticky="w")
+        ttk.Checkbutton(f, text="Empezar a grabar sola al salir al aire",
+                        variable=self.var_grabar).grid(row=3, column=0,
+                                                       columnspan=3, sticky="w",
+                                                       pady=px(8))
 
         self.var_reconectar = tk.BooleanVar(value=bool(config.get("reconectar")))
         ttk.Checkbutton(f, text="Reconectar solo si se cae el internet",
-                        variable=self.var_reconectar).grid(row=3, column=0,
+                        variable=self.var_reconectar).grid(row=4, column=0,
                                                            columnspan=3, sticky="w",
                                                            pady=px(8))
 
@@ -2055,6 +2068,7 @@ class DialogoConfig(tk.Toplevel):
         datos["ducking"] = self.var_duck.get()
         datos["ducking_nivel"] = round(self.var_duck_niv.get() / 100.0, 2)
         datos["carpeta_musica"] = self.var_carpeta.get().strip()
+        datos["carpeta_grabaciones"] = self.var_carpeta_grab.get().strip()
         datos["grabar_al_aire"] = self.var_grabar.get()
         datos["reconectar"] = self.var_reconectar.get()
         config.guardar(datos)
