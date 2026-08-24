@@ -113,6 +113,7 @@ class Mezclador:
         self.vol_musica = float(config.get("vol_musica", 0.8))
         self.vol_efectos = float(config.get("vol_efectos", 0.85))
         self.vol_monitor = float(config.get("volumen_monitor", 0.8))
+        self.master = mod_eq.db_a_ganancia(float(config.get("master_db", 0.0)))
         self.retraso_ms = 0.0             # lo mide `medir_retraso()`
         self.monitor_activo = bool(config.get("monitor_activo", True))
         self.monitor_mudo_con_micro = bool(config.get("monitor_mudo_con_micro"))
@@ -454,7 +455,9 @@ class Mezclador:
         musica = musica * (self.vol_musica * self._duck)
         efectos = efectos * self.vol_efectos
 
-        mezcla = mic + musica + efectos
+        mezcla = (mic + musica + efectos) * self.master
+        # el limitador va DESPUES del master: sube el nivel, pero el techo
+        # sigue siendo suyo y nunca se satura
         mezcla = self.limitador.procesar(mezcla)
         reduccion = self.limitador.reduccion
 
@@ -488,9 +491,11 @@ class Mezclador:
         self.vol_musica = float(config.get("vol_musica", 0.8))
         self.vol_efectos = float(config.get("vol_efectos", 0.85))
         self.vol_monitor = float(config.get("volumen_monitor", 0.8))
+        self.master = mod_eq.db_a_ganancia(float(config.get("master_db", 0.0)))
         self.ducking = bool(config.get("ducking", True))
         self.monitor_mudo_con_micro = bool(config.get("monitor_mudo_con_micro"))
         self.proteccion_acople = bool(config.get("proteccion_acople", True))
+        self.master = mod_eq.db_a_ganancia(float(config.get("master_db", 0.0)))
         # si han cambiado los auriculares, se reabre la salida al momento
         if (config.get("monitor") or "") != self._monitor_puesto or                 bool(config.get("monitor_activo", True)) != self.monitor_activo:
             self.cambiar_monitor()

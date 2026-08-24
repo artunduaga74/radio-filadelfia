@@ -57,6 +57,10 @@ DEFECTOS = {
     # que en estereo se gasta la mitad del bitrate en codificar una copia.
     # Medido a 128 kbps: estereo llega a 16.7 kHz y mono a 20.2 kHz.
     "emitir_mono": False,
+    # Volumen de emision, en dB. Medido el 2026-08-24, la senal salia a
+    # -18.9 LUFS y las radios por internet suelen ir a -16, asi que +3 dB
+    # la deja al nivel de las demas. El limitador sigue mandando en el techo.
+    "master_db": 0.0,
     "codec": "mp3",             # "mp3" | "aac"
 
     # --- identidad de la señal

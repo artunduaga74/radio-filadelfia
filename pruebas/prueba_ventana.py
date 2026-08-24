@@ -472,8 +472,11 @@ a._soltar_pista()
 for _ in range(10):
     a.update()
 check("suelta el arrastre", not a._arrastrando)
+# margen holgado a proposito: al saltar se relanza ffmpeg y mientras tanto la
+# ventana sigue pidiendo bloques, asi que la posicion avanza un poco. Lo que se
+# comprueba es que salto cerca de la mitad, no que sea exacto al milisegundo.
 check("salta a la mitad de la pista",
-      abs(p_.posicion - p_.duracion / 2) < 0.5,
+      abs(p_.posicion - p_.duracion / 2) < 1.0,
       "%.2f s de %.2f s" % (p_.posicion, p_.duracion))
 a.parar_musica()
 

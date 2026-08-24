@@ -408,6 +408,8 @@ class App(tk.Tk):
         self.lbl_pista = ttk.Label(caja, text="- nada -", style="Caja.TLabel",
                                    font=estilo.FUENTE_TIT, anchor="w")
         self.lbl_pista.grid(row=0, column=0, sticky="ew")
+        self.titulo_completo = "- nada -"
+        self.lbl_pista.bind("<Configure>", lambda e: self._ajustar_titulo())
         self.lbl_artista = ttk.Label(caja, text="", style="CajaSuave.TLabel",
                                      anchor="w")
         self.lbl_artista.grid(row=1, column=0, sticky="ew", pady=(0, px(2)))
@@ -524,22 +526,6 @@ class App(tk.Tk):
             f.configure(length=px(90))
             self.faders[ajuste] = var
             fila += 1
-
-        # los auriculares: solo cambia lo que TU oyes, no lo que sale al aire
-        ttk.Label(caja, text="AURICULARES", style="CajaSuave.TLabel",
-                  width=10).grid(row=fila, column=0, sticky="w", pady=px(2))
-        self.var_vol_monitor = tk.DoubleVar(
-            value=mod_eq.ganancia_a_db(float(config.get("volumen_monitor", 0.8))))
-        f_mon = ttk.Scale(caja, from_=-40, to=6, variable=self.var_vol_monitor,
-                          style="Caja.Horizontal.TScale",
-                          command=self._fader_monitor)
-        f_mon.grid(row=fila, column=1, columnspan=2, sticky="ew", padx=px(6))
-        Consejo(f_mon, "Volumen de lo que oyes por los auriculares. "
-                       "No afecta a lo que sale al aire.")
-        self.lbl_vol_monitor = ttk.Label(caja, text="", style="CajaMono.TLabel",
-                                         width=7)
-        self.lbl_vol_monitor.grid(row=fila, column=3, sticky="w")
-        fila += 1
 
         ttk.Separator(caja, orient="horizontal").grid(
             row=fila, column=0, columnspan=3, sticky="ew", pady=px(6))
@@ -823,15 +809,6 @@ class App(tk.Tk):
             else:
                 b.configure(text=c.nombre, style="MicOff.TButton")
 
-    def _fader_monitor(self, valor):
-        """Volumen de los auriculares. Nunca toca lo que se transmite."""
-        db = float(valor)
-        ganancia = mod_eq.db_a_ganancia(db)
-        self.mezclador.vol_monitor = ganancia
-        self.lbl_vol_monitor.configure(
-            text=("mudo" if db <= -40 else "%+.0f dB" % db))
-        config.guardar({"volumen_monitor": round(ganancia, 4)})
-
     def _fader_micro(self, indice, valor):
         """El volumen de un microfono. El deslizador va en dB."""
         if not (0 <= indice < len(self.mezclador.canales)):
@@ -893,7 +870,9 @@ class App(tk.Tk):
                  float(pista.get("duracion", 0) or 0))
         p.reproducir(fundido_ms=300)
         self.btn_play.configure(text=ICO_PAUSA)
-        self.lbl_pista.configure(text=pista.get("titulo", "")[:42] or "-")
+        self.titulo_completo = pista.get("titulo", "") or "-"
+        self._ajustar_titulo()
+        Consejo(self.lbl_pista, self.titulo_completo)
         self.lbl_artista.configure(text=pista.get("artista", ""))
         self._marcar_sonando()
         # avisar al servidor que cambio la cancion
@@ -935,6 +914,31 @@ class App(tk.Tk):
         if not self.mezclador.corriendo:
             self.mezclador.arrancar()
         self.mezclador.disparar_efecto(ruta, self._texto_cortina(n))
+
+    def _ajustar_titulo(self):
+        """
+        Recorta el titulo con puntos suspensivos para que quepa en su sitio.
+
+        Antes se cortaba a lo bruto por el borde y no se sabia si faltaba algo;
+        ahora se ve que sigue ("Daniel 10 - Cautividad, Purifi...") y el titulo
+        entero queda en el globo de ayuda.
+        """
+        try:
+            import tkinter.font as tkfont
+            ancho = self.lbl_pista.winfo_width() - px(6)
+            if ancho < px(40):
+                return
+            fuente = tkfont.Font(font=self.lbl_pista.cget("font"))
+            texto = self.titulo_completo
+            if fuente.measure(texto) <= ancho:
+                self.lbl_pista.configure(text=texto)
+                return
+            corto = texto
+            while corto and fuente.measure(corto + "...") > ancho:
+                corto = corto[:-1]
+            self.lbl_pista.configure(text=corto.rstrip() + "...")
+        except Exception:
+            pass
 
     def _texto_cortina(self, n):
         """Lo que se lee en el boton: el nombre puesto, o el del archivo."""
@@ -1196,7 +1200,6 @@ class App(tk.Tk):
             var = self.faders.get("micro%d" % c.indice)
             if var is not None:
                 self._fader_micro(c.indice, var.get())
-        self._fader_monitor(self.var_vol_monitor.get())
         carpeta = config.get("carpeta_musica")
         if carpeta and os.path.isdir(carpeta):
             self.biblio = biblioteca.Biblioteca(carpeta)
@@ -1473,19 +1476,37 @@ class DialogoConfig(tk.Toplevel):
         ttk.Combobox(cal, textvariable=self.var_codec, width=6, state="readonly",
                      values=("mp3", "aac")).pack(side="left")
 
+        ttk.Label(f, text="Volumen de emision:").grid(row=16, column=0,
+                                                      sticky="w", pady=(px(6), 0))
+        marco_m = ttk.Frame(f)
+        marco_m.grid(row=16, column=1, sticky="w", pady=(px(6), 0))
+        self.var_master = tk.DoubleVar(value=float(config.get("master_db", 0.0)))
+        ttk.Scale(marco_m, from_=-12, to=12, variable=self.var_master,
+                  length=px(180),
+                  command=lambda v: self._pintar_master()).pack(side="left")
+        self.lbl_master = ttk.Label(marco_m, text="", width=7,
+                                    style="Suave.TLabel")
+        self.lbl_master.pack(side="left", padx=px(6))
+
         self.var_mono = tk.BooleanVar(value=bool(config.get("emitir_mono")))
         ttk.Checkbutton(f, text="Emitir en mono (mejor calidad al mismo bitrate "
                                 "si el programa es hablado)",
                         variable=self.var_mono).grid(row=17, column=0,
                                                      columnspan=2, sticky="w",
                                                      pady=(px(4), 0))
-        ttk.Label(f, text="Medido a 128 kbps: en estereo llega a 16.7 kHz y en "
-                          "mono a 20.2 kHz.",
+        ttk.Label(f, text="Medido el 24-08: tu senal salia a -18.9 LUFS y las "
+                          "radios suelen ir a -16, o sea unos +3 dB.",
                   style="Suave.TLabel").grid(row=18, column=0, columnspan=2,
                                              sticky="w")
         ttk.Label(f, text="El plan contratado admite 128 kbps y 120 oyentes.",
                   style="Suave.TLabel").grid(row=19, column=0, columnspan=2,
                                              sticky="w", pady=(px(6), 0))
+        self._pintar_master()
+
+    def _pintar_master(self):
+        db = float(self.var_master.get())
+        self.lbl_master.configure(text="%+.1f dB" % db)
+        self.padre.mezclador.master = mod_eq.db_a_ganancia(db)
 
     def _pista_puerto(self):
         """Explica en vivo a que puerto se conectara de verdad."""
@@ -1502,25 +1523,34 @@ class DialogoConfig(tk.Toplevel):
         self.lbl_puerto.configure(text=texto)
 
     def _pestana_audio(self, nb):
+        """
+        Aparatos y niveles.
+
+        Las filas se llevan con un contador, NO sumando a mano sobre una base:
+        asi era como acababan dibujandose dos cosas en la misma fila y se veia
+        una raya encima de un texto.
+        """
         f = ttk.Frame(nb, padding=px(12))
         nb.add(f, text="Audio")
         f.columnconfigure(1, weight=1)
+        fila = 0
 
         entradas = [n for _, n, _, _ in audio.listar(entrada=True)]
         salidas = [n for _, n, _, _ in audio.listar(entrada=False)]
 
-        ttk.Label(f, text="MICROFONOS   ·   uno por cada persona al aire",
-                  style="Suave.TLabel").grid(row=0, column=0, columnspan=2,
+        ttk.Label(f, text="MICROFONOS   .   uno por cada persona al aire",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
                                              sticky="w")
+        fila += 1
         self.vars_micros = []
         micros = config.microfonos()
-        while len(micros) < config.MAX_MICROS:      # huecos para invitados
+        while len(micros) < config.MAX_MICROS:
             micros.append({"nombre": "Micro %d" % (len(micros) + 1),
-                           "dispositivo": "", "volumen": 0.9,
+                           "dispositivo": "", "volumen": 1.0,
                            "eq_preset": "Plano", "eq": {}})
         for i, m in enumerate(micros[:config.MAX_MICROS]):
             fila_m = ttk.Frame(f)
-            fila_m.grid(row=1 + i, column=0, columnspan=2, sticky="ew", pady=px(2))
+            fila_m.grid(row=fila, column=0, columnspan=3, sticky="ew", pady=px(2))
             ttk.Label(fila_m, text="%d." % (i + 1), width=2).pack(side="left")
             v_nombre = tk.StringVar(value=m.get("nombre") or "")
             ttk.Entry(fila_m, textvariable=v_nombre, width=12).pack(side="left")
@@ -1528,100 +1558,135 @@ class DialogoConfig(tk.Toplevel):
             ttk.Combobox(fila_m, textvariable=v_disp, values=[""] + entradas,
                          width=34, state="readonly").pack(side="left", padx=px(6))
             self.vars_micros.append((v_nombre, v_disp))
+            fila += 1
         ttk.Label(f, text="Deja el aparato en blanco para no usar ese canal. "
-                          "Los microfonos se aplican al reiniciar la aplicacion.",
-                  style="Suave.TLabel").grid(row=1 + config.MAX_MICROS, column=0,
-                                             columnspan=2, sticky="w",
-                                             pady=(px(2), px(8)))
+                          "Los microfonos se aplican al reiniciar.",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
+                                             sticky="w", pady=(px(2), px(8)))
+        fila += 1
 
-        base = 2 + config.MAX_MICROS
-        ttk.Label(f, text="Monitor (auriculares):").grid(row=base, column=0,
-                                                         sticky="w", pady=px(4))
+        ttk.Separator(f, orient="horizontal").grid(row=fila, column=0,
+                                                   columnspan=3, sticky="ew",
+                                                   pady=px(6))
+        fila += 1
+        ttk.Label(f, text="Auriculares:").grid(row=fila, column=0, sticky="w",
+                                               pady=px(4))
         self.var_monitor = tk.StringVar(value=config.get("monitor"))
         ttk.Combobox(f, textvariable=self.var_monitor, values=salidas,
-                     width=40, state="readonly").grid(row=base, column=1, sticky="ew")
+                     width=38, state="readonly").grid(row=fila, column=1,
+                                                      columnspan=2, sticky="ew")
+        fila += 1
+
+        ttk.Label(f, text="Su volumen:").grid(row=fila, column=0, sticky="w",
+                                              pady=px(4))
+        self.var_vol_mon = tk.DoubleVar(
+            value=mod_eq.ganancia_a_db(float(config.get("volumen_monitor", 0.8))))
+        ttk.Scale(f, from_=-40, to=6, variable=self.var_vol_mon, length=px(210),
+                  command=lambda v: self._pintar_vol_mon()).grid(
+            row=fila, column=1, sticky="w")
+        self.lbl_vol_mon = ttk.Label(f, text="", width=7, style="Suave.TLabel")
+        self.lbl_vol_mon.grid(row=fila, column=2, sticky="w")
+        fila += 1
+        ttk.Label(f, text="Solo cambia lo que oyes tu; no toca lo que sale al aire.",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
+                                             sticky="w")
+        fila += 1
 
         self.var_mon_act = tk.BooleanVar(value=bool(config.get("monitor_activo")))
         ttk.Checkbutton(f, text="Escuchar por los auriculares lo que sale al aire",
-                        variable=self.var_mon_act).grid(row=base + 1, column=0,
-                                                        columnspan=2,
-                                                        sticky="w", pady=px(6))
-
+                        variable=self.var_mon_act).grid(row=fila, column=0,
+                                                        columnspan=3, sticky="w",
+                                                        pady=px(4))
+        fila += 1
         self.var_mudo_micro = tk.BooleanVar(
             value=bool(config.get("monitor_mudo_con_micro")))
-        ttk.Checkbutton(f, text="Callar los auriculares mientras el microfono "
-                                "este abierto (evita el acople)",
-                        variable=self.var_mudo_micro).grid(
-            row=base + 2, column=0, columnspan=2, sticky="w")
+        ttk.Checkbutton(f, text="Callarlos mientras el microfono este abierto "
+                                "(evita el acople)",
+                        variable=self.var_mudo_micro).grid(row=fila, column=0,
+                                                           columnspan=3,
+                                                           sticky="w")
+        fila += 1
         self.var_anti_acople = tk.BooleanVar(
             value=bool(config.get("proteccion_acople", True)))
-        ttk.Checkbutton(f, text="Cortar los auriculares solo si detecta un "
-                                "pitido de acople",
-                        variable=self.var_anti_acople).grid(
-            row=base + 3, column=0, columnspan=2, sticky="w", pady=(0, px(4)))
+        ttk.Checkbutton(f, text="Cortarlos solo si detecta un pitido de acople",
+                        variable=self.var_anti_acople).grid(row=fila, column=0,
+                                                            columnspan=3,
+                                                            sticky="w")
+        fila += 1
 
         fila_prueba = ttk.Frame(f)
-        fila_prueba.grid(row=base + 4, column=0, columnspan=2, sticky="w")
+        fila_prueba.grid(row=fila, column=0, columnspan=3, sticky="w", pady=px(4))
         ttk.Button(fila_prueba, text="Probar los auriculares",
                    command=self.probar_monitor).pack(side="left")
         self.lbl_monitor = ttk.Label(fila_prueba, text="", style="Suave.TLabel")
         self.lbl_monitor.pack(side="left", padx=px(8))
-        ttk.Label(f, text="Retraso al oirte:").grid(row=base + 7, column=0,
+        fila += 1
+        ttk.Label(f, text="Los Bluetooth funcionan: Windows convierte el "
+                          "muestreo por su cuenta.",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
+                                             sticky="w")
+        fila += 1
+
+        ttk.Separator(f, orient="horizontal").grid(row=fila, column=0,
+                                                   columnspan=3, sticky="ew",
+                                                   pady=px(6))
+        fila += 1
+        ttk.Label(f, text="Retraso al oirte:").grid(row=fila, column=0,
                                                     sticky="w", pady=px(4))
         self.var_bloque = tk.StringVar(
             value=BLOQUES_TEXTO.get(int(config.get("bloque_audio", 512)),
                                     BLOQUES_TEXTO[512]))
-        cbb = ttk.Combobox(f, textvariable=self.var_bloque, state="readonly",
-                           width=30,
-                           values=[BLOQUES_TEXTO[k] for k in (1024, 512, 256)])
-        cbb.grid(row=base + 7, column=1, sticky="w")
-        ttk.Label(f, text="Cuanto mas corto, menos te oyes con eco al hablar, "
-                          "pero mas trabaja el ordenador.",
-                  style="Suave.TLabel").grid(row=base + 8, column=0,
-                                             columnspan=2, sticky="w")
+        ttk.Combobox(f, textvariable=self.var_bloque, state="readonly", width=28,
+                     values=[BLOQUES_TEXTO[k] for k in (1024, 512, 256)]).grid(
+            row=fila, column=1, columnspan=2, sticky="w")
+        fila += 1
+        ttk.Label(f, text="Cuanto mas corto, menos eco al oirte, pero mas "
+                          "trabaja el ordenador.",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
+                                             sticky="w")
+        fila += 1
 
-        ttk.Label(f, text="Los auriculares Bluetooth funcionan: Windows convierte "
-                          "el muestreo por su cuenta.",
-                  style="Suave.TLabel").grid(row=base + 7, column=0, columnspan=2,
-                                             sticky="w", pady=(px(2), 0))
-
-        ttk.Separator(f, orient="horizontal").grid(row=base + 8, column=0,
-                                                   columnspan=2, sticky="ew",
-                                                   pady=px(8))
+        ttk.Separator(f, orient="horizontal").grid(row=fila, column=0,
+                                                   columnspan=3, sticky="ew",
+                                                   pady=px(6))
+        fila += 1
         self.var_duck = tk.BooleanVar(value=bool(config.get("ducking")))
         ttk.Checkbutton(f, text="Bajar la musica automaticamente al hablar",
-                        variable=self.var_duck).grid(row=base + 9, column=0,
-                                                     columnspan=2, sticky="w")
-        ttk.Label(f, text="Cuanto baja:").grid(row=base + 10, column=0, sticky="w",
+                        variable=self.var_duck).grid(row=fila, column=0,
+                                                     columnspan=3, sticky="w")
+        fila += 1
+        ttk.Label(f, text="Cuanto baja:").grid(row=fila, column=0, sticky="w",
                                                pady=px(4))
-        self.var_duck_niv = tk.DoubleVar(value=float(config.get("ducking_nivel")) * 100)
+        self.var_duck_niv = tk.DoubleVar(
+            value=float(config.get("ducking_nivel")) * 100)
         ttk.Scale(f, from_=5, to=80, variable=self.var_duck_niv,
-                  length=px(200)).grid(row=base + 10, column=1, sticky="w")
+                  length=px(210)).grid(row=fila, column=1, sticky="w")
+        fila += 1
 
-        ttk.Separator(f, orient="horizontal").grid(row=base + 11, column=0,
-                                                   columnspan=2, sticky="ew",
-                                                   pady=px(8))
-        ttk.Label(f, text="Barra espaciadora:").grid(row=base + 12, column=0,
+        ttk.Separator(f, orient="horizontal").grid(row=fila, column=0,
+                                                   columnspan=3, sticky="ew",
+                                                   pady=px(6))
+        fila += 1
+        ttk.Label(f, text="Barra espaciadora:").grid(row=fila, column=0,
                                                      sticky="w", pady=px(4))
         self.var_espacio = tk.StringVar(
             value=ESPACIO_TEXTOS.get(config.get("tecla_espacio", ESPACIO_MICRO),
                                      ESPACIO_TEXTOS[ESPACIO_MICRO]))
-        ttk.Combobox(f, textvariable=self.var_espacio, state="readonly", width=30,
+        ttk.Combobox(f, textvariable=self.var_espacio, state="readonly", width=28,
                      values=[ESPACIO_TEXTOS[k] for k in
                              (ESPACIO_MICRO, ESPACIO_PLAY, ESPACIO_NADA)]).grid(
-            row=base + 12, column=1, sticky="w")
-        ttk.Label(f, text="F1 abre el microfono y F2 graba, elijas lo que elijas. "
-                          "Mientras se escribe en un campo, la barra no hace nada.",
-                  style="Suave.TLabel").grid(row=base + 13, column=0, columnspan=2,
+            row=fila, column=1, columnspan=2, sticky="w")
+        fila += 1
+        ttk.Label(f, text="F1 abre el microfono y F2 graba, elijas lo que elijas.",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
                                              sticky="w")
+        self._pintar_vol_mon()
 
-        ttk.Separator(f, orient="horizontal").grid(row=base + 14, column=0,
-                                                   columnspan=2, sticky="ew",
-                                                   pady=px(8))
-        ttk.Label(f, text="Cambiar de microfono o de auriculares exige volver a "
-                          "salir al aire.",
-                  style="Suave.TLabel").grid(row=base + 15, column=0, columnspan=2,
-                                             sticky="w")
+    def _pintar_vol_mon(self):
+        """El volumen de los auriculares se aplica al momento, sin guardar."""
+        db = float(self.var_vol_mon.get())
+        self.lbl_vol_mon.configure(text=("mudo" if db <= -40 else "%+.0f dB" % db))
+        self.padre.mezclador.vol_monitor = mod_eq.db_a_ganancia(db)
 
     def probar_monitor(self):
         """Un pitido por los auriculares elegidos, sin tocar la emision."""
@@ -1964,9 +2029,12 @@ class DialogoConfig(tk.Toplevel):
         datos["bitrate"] = int(self.var_bitrate.get())
         datos["codec"] = self.var_codec.get()
         datos["emitir_mono"] = self.var_mono.get()
+        datos["master_db"] = round(float(self.var_master.get()), 1)
 
         datos["monitor"] = self.var_monitor.get()
         datos["monitor_activo"] = self.var_mon_act.get()
+        datos["volumen_monitor"] = round(
+            mod_eq.db_a_ganancia(float(self.var_vol_mon.get())), 4)
         inverso_b = {v: k for k, v in BLOQUES_TEXTO.items()}
         datos["bloque_audio"] = inverso_b.get(self.var_bloque.get(), 512)
         datos["monitor_mudo_con_micro"] = self.var_mudo_micro.get()

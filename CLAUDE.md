@@ -106,7 +106,7 @@ eq.py              cadena de voz: ecualizador, compresor, puerta y limitador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           295 comprobaciones automáticas
+pruebas/           295 comprobaciones automáticas (5 archivos)
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -178,6 +178,27 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **Retoques de pantalla y volumen de emisión.**
+  El usuario mandó capturas anotadas. Cuatro cosas:
+  **(1) La raya rara de Configuración era un choque de filas:** en la pestaña
+  Audio, `base + 7` estaba usado **tres veces** y `base + 8` dos, así que se
+  dibujaban textos encima de separadores. Causa de fondo: numerar filas
+  sumando a mano sobre una base. **La pestaña se reescribió con un contador
+  `fila` que se incrementa**, que elimina esa clase de error de raíz.
+  **(2) El fader de auriculares se movió a Configuración → Audio**, como pedía,
+  y con eso las cortinas dejan de quedar cortadas (comprobado a cuatro anchos).
+  **(3) El título ya no se corta a lo bruto:** `_ajustar_titulo()` lo recorta al
+  ancho real con puntos suspensivos y deja el completo en el globo de ayuda.
+  Verificado: uno de 1077 px se queda en 674 y cabe en los 688 disponibles.
+  **(4) Volumen de emisión (master), con dato medido.** Se midió su señal en
+  antena con `ebur128`: **−18.9 LUFS integrados, pico real −3.5 dBFS**. Las
+  radios por internet suelen ir a **−16 LUFS**, así que sonaba ~3 dB más floja
+  que las demás. Nuevo `master_db` (−12…+12), aplicado ANTES del limitador para
+  que el techo siga garantizado. Está en Configuración → Servidor.
+  Una prueba del salto de pista falló una vez de cinco: no era el código, era
+  el temporizado del relanzamiento de ffmpeg. Margen ampliado y explicado.
+  295 comprobaciones en verde. — Estado: ✅ — Siguiente: subir a GitHub.
 
 - [2026-08-24] **Volumen de los auriculares y retraso al oírse.**
   **(1) El volumen del monitor no se podía tocar.** Descuido mío: el ajuste
