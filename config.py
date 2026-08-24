@@ -79,6 +79,11 @@ DEFECTOS = {
     "monitor": "",              # dispositivo de salida para auriculares
     "api_audio": "Windows WASAPI",
     "monitor_activo": True,
+    # Anti-acople: si el monitor sale por ALTAVOCES (o un aparato Bluetooth
+    # que no son auriculares), abrir el microfono provoca pitido. Con esto,
+    # los auriculares se callan mientras haya un microfono abierto.
+    "monitor_mudo_con_micro": False,
+    "proteccion_acople": True,      # y si aun asi se acopla, se corta solo
     "volumen_monitor": 0.8,
 
     # --- mezcla

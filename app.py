@@ -109,9 +109,12 @@ class App(tk.Tk):
         self.auto_siguiente = True
         self.ultimo_titulo_enviado = ""
         self._explorando = False
+        self._aviso_acople = False
+        self._musica_en_pausa_por_micro = False
 
         self._construir_menu()
         self._construir()
+        self._botones_sin_foco(self)
         self._cargar_ajustes_en_pantalla()
 
         self.vigilante.arrancar()
@@ -162,12 +165,52 @@ class App(tk.Tk):
         # La barra espaciadora se decide en Configuracion (por defecto, el
         # microfono). F1 y F2 valen siempre, hagan lo que hagan los demas.
         self.bind("<space>", lambda e: self._atajo_espacio())
+        # Y ademas hay que quitarsela a los botones: Tk se la manda al que
+        # tenga el foco ANTES que a nosotros, asi que con el foco en el boton
+        # del microfono la barra lo abria (el boton) y lo cerraba (el atajo)
+        # en el mismo golpe. Reproducido y corregido el 2026-08-24.
+        for clase in ("TButton", "TCheckbutton", "TRadiobutton"):
+            self.bind_class(clase, "<space>", self._espacio_en_boton)
         self.bind("<F1>", lambda e: self._atajo(self.alternar_microfono))
         self.bind("<F2>", lambda e: self._atajo(self.alternar_grabacion))
         self.bind("<Control-Right>", lambda e: self._atajo(self.siguiente_pista))
         for n in range(config.MAX_MICROS):
             self.bind("<Control-Key-%d>" % (n + 1),
                       lambda e, i=n: self._atajo(lambda: self.alternar_microfono(i)))
+
+    def _espacio_en_boton(self, evento):
+        """
+        La barra pulsada con el foco en un boton.
+
+        En la ventana principal manda el atajo (y se corta ahi, para que el
+        boton no se pulse tambien). En los dialogos se deja el comportamiento
+        de siempre: la barra pulsa el boton que tenga el foco.
+        """
+        try:
+            if evento.widget.winfo_toplevel() is not self:
+                return None
+        except tk.TclError:
+            return None
+        self._atajo_espacio()
+        return "break"
+
+    def _botones_sin_foco(self, padre):
+        """
+        Que ningun boton se quede el foco del teclado.
+
+        Si un boton tiene el foco, Tk le manda la barra espaciadora A EL (lo
+        pulsa) ADEMAS de a nuestro atajo: con el foco en el boton del
+        microfono, la barra lo abria y lo cerraba en el mismo golpe, y parecia
+        que el atajo no funcionaba. Reproducido y corregido el 2026-08-24.
+        """
+        for hijo in padre.winfo_children():
+            if isinstance(hijo, (ttk.Button, ttk.Checkbutton, ttk.Radiobutton,
+                                 ttk.Scale)):
+                try:
+                    hijo.configure(takefocus=False)
+                except tk.TclError:
+                    pass
+            self._botones_sin_foco(hijo)
 
     def _atajo(self, funcion):
         """
@@ -567,6 +610,12 @@ class App(tk.Tk):
                 self.btn_aire.configure(text="SALIR AL AIRE", style="Salir.TButton")
 
             self._pintar_grabacion()
+            if self.mezclador.acople and not self._aviso_acople:
+                self._aviso_acople = True
+                self.mensaje("ACOPLE detectado: se callaron los auriculares. "
+                             "Baja el volumen o usa audifonos cerrados.")
+            elif not self.mezclador.acople:
+                self._aviso_acople = False
             self._encadenar()
             self._pintar_oyentes()
         except tk.TclError:
@@ -670,8 +719,31 @@ class App(tk.Tk):
             return
         abierto = self.mezclador.alternar_micro(indice)
         self._pintar_micros()
+        self._musica_segun_micro()
         self.mensaje("%s %s." % (canal.nombre,
                                  "abierto" if abierto else "cerrado"))
+
+    def _musica_segun_micro(self):
+        """
+        Que le pasa a la musica cuando se abre o se cierra un microfono.
+
+        Con "Bajar musica al hablar" marcado, de eso ya se encarga el mezclador
+        (baja el volumen y lo devuelve solo). Sin marcar, lo que se espera es
+        que la musica se PARE mientras se habla y vuelva a sonar al cerrar.
+        """
+        if self.var_ducking.get():
+            return                      # el ducking ya lo hace por su cuenta
+        hay_micro = any(c.abierto for c in self.mezclador.canales)
+        p = self.mezclador.pista_a
+        if hay_micro and p.sonando:
+            self._musica_en_pausa_por_micro = True
+            p.pausar()
+            self.btn_play.configure(text=ICO_PLAY)
+            self.mensaje("Musica en pausa mientras hablas.")
+        elif not hay_micro and getattr(self, "_musica_en_pausa_por_micro", False):
+            self._musica_en_pausa_por_micro = False
+            p.reproducir()
+            self.btn_play.configure(text=ICO_PAUSA)
 
     def _pintar_micros(self):
         """Rojo el que este al aire; el resto, apagados."""
@@ -876,6 +948,8 @@ class App(tk.Tk):
 
     def _carpeta_lista(self, pistas):
         self._explorando = False
+        self._aviso_acople = False
+        self._musica_en_pausa_por_micro = False
         if not pistas:
             self.mensaje("No se encontro audio en esa carpeta.")
             return
@@ -992,6 +1066,14 @@ class App(tk.Tk):
     def _cambio_ducking(self):
         config.guardar({"ducking": self.var_ducking.get()})
         self.mezclador.aplicar_ajustes()
+        if self.var_ducking.get():
+            # vuelve el modo "bajar": si estaba parada por el micro, que siga
+            if getattr(self, "_musica_en_pausa_por_micro", False):
+                self._musica_en_pausa_por_micro = False
+                self.mezclador.pista_a.reproducir()
+                self.btn_play.configure(text=ICO_PAUSA)
+        else:
+            self._musica_segun_micro()
 
     # ---------------------------------------------------------------- varios
 
@@ -1308,34 +1390,47 @@ class DialogoConfig(tk.Toplevel):
                                                         columnspan=2,
                                                         sticky="w", pady=px(6))
 
+        self.var_mudo_micro = tk.BooleanVar(
+            value=bool(config.get("monitor_mudo_con_micro")))
+        ttk.Checkbutton(f, text="Callar los auriculares mientras el microfono "
+                                "este abierto (evita el acople)",
+                        variable=self.var_mudo_micro).grid(
+            row=base + 2, column=0, columnspan=2, sticky="w")
+        self.var_anti_acople = tk.BooleanVar(
+            value=bool(config.get("proteccion_acople", True)))
+        ttk.Checkbutton(f, text="Cortar los auriculares solo si detecta un "
+                                "pitido de acople",
+                        variable=self.var_anti_acople).grid(
+            row=base + 3, column=0, columnspan=2, sticky="w", pady=(0, px(4)))
+
         fila_prueba = ttk.Frame(f)
-        fila_prueba.grid(row=base + 2, column=0, columnspan=2, sticky="w")
+        fila_prueba.grid(row=base + 4, column=0, columnspan=2, sticky="w")
         ttk.Button(fila_prueba, text="Probar los auriculares",
                    command=self.probar_monitor).pack(side="left")
         self.lbl_monitor = ttk.Label(fila_prueba, text="", style="Suave.TLabel")
         self.lbl_monitor.pack(side="left", padx=px(8))
         ttk.Label(f, text="Los auriculares Bluetooth funcionan: Windows convierte "
                           "el muestreo por su cuenta.",
-                  style="Suave.TLabel").grid(row=base + 3, column=0, columnspan=2,
+                  style="Suave.TLabel").grid(row=base + 5, column=0, columnspan=2,
                                              sticky="w", pady=(px(2), 0))
 
-        ttk.Separator(f, orient="horizontal").grid(row=base + 4, column=0,
+        ttk.Separator(f, orient="horizontal").grid(row=base + 6, column=0,
                                                    columnspan=2, sticky="ew",
                                                    pady=px(8))
         self.var_duck = tk.BooleanVar(value=bool(config.get("ducking")))
         ttk.Checkbutton(f, text="Bajar la musica automaticamente al hablar",
-                        variable=self.var_duck).grid(row=base + 5, column=0,
+                        variable=self.var_duck).grid(row=base + 7, column=0,
                                                      columnspan=2, sticky="w")
-        ttk.Label(f, text="Cuanto baja:").grid(row=base + 6, column=0, sticky="w",
+        ttk.Label(f, text="Cuanto baja:").grid(row=base + 8, column=0, sticky="w",
                                                pady=px(4))
         self.var_duck_niv = tk.DoubleVar(value=float(config.get("ducking_nivel")) * 100)
         ttk.Scale(f, from_=5, to=80, variable=self.var_duck_niv,
-                  length=px(200)).grid(row=base + 6, column=1, sticky="w")
+                  length=px(200)).grid(row=base + 8, column=1, sticky="w")
 
-        ttk.Separator(f, orient="horizontal").grid(row=base + 7, column=0,
+        ttk.Separator(f, orient="horizontal").grid(row=base + 9, column=0,
                                                    columnspan=2, sticky="ew",
                                                    pady=px(8))
-        ttk.Label(f, text="Barra espaciadora:").grid(row=base + 8, column=0,
+        ttk.Label(f, text="Barra espaciadora:").grid(row=base + 10, column=0,
                                                      sticky="w", pady=px(4))
         self.var_espacio = tk.StringVar(
             value=ESPACIO_TEXTOS.get(config.get("tecla_espacio", ESPACIO_MICRO),
@@ -1343,18 +1438,18 @@ class DialogoConfig(tk.Toplevel):
         ttk.Combobox(f, textvariable=self.var_espacio, state="readonly", width=30,
                      values=[ESPACIO_TEXTOS[k] for k in
                              (ESPACIO_MICRO, ESPACIO_PLAY, ESPACIO_NADA)]).grid(
-            row=base + 8, column=1, sticky="w")
+            row=base + 10, column=1, sticky="w")
         ttk.Label(f, text="F1 abre el microfono y F2 graba, elijas lo que elijas. "
                           "Mientras se escribe en un campo, la barra no hace nada.",
-                  style="Suave.TLabel").grid(row=base + 9, column=0, columnspan=2,
+                  style="Suave.TLabel").grid(row=base + 11, column=0, columnspan=2,
                                              sticky="w")
 
-        ttk.Separator(f, orient="horizontal").grid(row=base + 10, column=0,
+        ttk.Separator(f, orient="horizontal").grid(row=base + 12, column=0,
                                                    columnspan=2, sticky="ew",
                                                    pady=px(8))
         ttk.Label(f, text="Cambiar de microfono o de auriculares exige volver a "
                           "salir al aire.",
-                  style="Suave.TLabel").grid(row=base + 11, column=0, columnspan=2,
+                  style="Suave.TLabel").grid(row=base + 13, column=0, columnspan=2,
                                              sticky="w")
 
     def probar_monitor(self):
@@ -1604,6 +1699,8 @@ class DialogoConfig(tk.Toplevel):
 
         datos["monitor"] = self.var_monitor.get()
         datos["monitor_activo"] = self.var_mon_act.get()
+        datos["monitor_mudo_con_micro"] = self.var_mudo_micro.get()
+        datos["proteccion_acople"] = self.var_anti_acople.get()
         micros = config.microfonos()
         while len(micros) < len(self.vars_micros):
             micros.append({"nombre": "", "dispositivo": "", "volumen": 0.9,

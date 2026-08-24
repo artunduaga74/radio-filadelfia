@@ -106,7 +106,7 @@ eq.py              ecualizador de voz (biquads + scipy), con ajustes de fábrica
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           213 comprobaciones automáticas
+pruebas/           233 comprobaciones automáticas
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -133,9 +133,16 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
 4. **El filtro `sine` de ffmpeg genera a −21 dB**, no a fondo de escala. Una
    tanda de pruebas "falló" por esto con el código correcto. Usar `aevalsrc`
    con amplitud explícita.
-5. **Drenar siempre el stderr de ffmpeg en un hilo.** Si se llenan los 64 KB de
+5. **Tk manda la barra espaciadora al botón que tenga el foco ANTES que a
+   la ventana.** Con el foco en el botón del micrófono, la barra lo abría (el
+   botón) y lo cerraba (el atajo) en el mismo golpe: parecía que el atajo no
+   funcionaba. `takefocus=False` **no basta** — un clic da el foco igual. La
+   solución es interceptar la clase: `bind_class("TButton", "<space>", ...)`
+   devolviendo `"break"`, y solo en la ventana principal (en los diálogos la
+   barra debe seguir pulsando el botón).
+6. **Drenar siempre el stderr de ffmpeg en un hilo.** Si se llenan los 64 KB de
    la tubería, ffmpeg se bloquea para siempre.
-6. **Una prueba que se fía del código de salida de ffmpeg no prueba nada.**
+7. **Una prueba que se fía del código de salida de ffmpeg no prueba nada.**
    El campo "host" tenía pegada la dirección del panel
    (`http://cast1.asurahosting.com/start/nonefern`), la URL salía deformada,
    ffmpeg acababa hablando con un **servidor web cualquiera** por el puerto 80
@@ -143,7 +150,7 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
    defensas: `emisor.limpiar_host()` sanea el campo siempre, y la verificación
    real es la respuesta del servidor (`OK` / `Invalid password`), no el código
    de salida. Hay prueba de no regresión en `pruebas/prueba_emisor.py`.
-7. **Las pruebas NO deben escribir en la configuración real.** Redirigir
+8. **Las pruebas NO deben escribir en la configuración real.** Redirigir
    `config.ARCHIVO_AJUSTES` y compañía a una carpeta temporal *antes* de
    importar la app. (En el transcriptor unas pruebas dejaron basura en los
    "recientes" del usuario.)
@@ -151,8 +158,8 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
 ## 6. Estado y qué sigue
 
 **Hecho y probado (2026-08-24):** los 11 módulos, **94 comprobaciones en
-verde** (50 del motor, 39 del emisor/ICY, 34 del ecualizador y el grabador, 13 del
-monitor de aire, 77 de la ventana). Todo lo de audio se mide: dB reales, no "parece que suena".
+verde** (52 del motor, 39 del emisor/ICY, 34 del ecualizador y el grabador, 13 del
+monitor de aire, 95 de la ventana). Todo lo de audio se mide: dB reales, no "parece que suena".
 
 **⛔ GATE PENDIENTE — lo único que falta para darlo por bueno:** el usuario debe
 correr `python prueba_conexion.py` con su usuario y clave de DJ. **Nunca se ha
@@ -172,6 +179,30 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **Dos bugs reportados por el usuario, los dos reproducidos.**
+  **(1) El selector de auriculares no hacía nada** (siempre salía por el
+  Bluetooth). Causa: el monitor solo se abría en `Mezclador.arrancar()`, así
+  que cambiarlo en Configuración no reabría nada y se seguía oyendo por el
+  aparato anterior; además, si el nombre guardado no coincidía, `audio.buscar()`
+  devolvía None y sonaba **por la salida por defecto del sistema sin avisar**.
+  Nuevo `Mezclador.cambiar_monitor()` (cierra y reabre en caliente, lo llama
+  `aplicar_ajustes` al detectar el cambio) y aviso explícito cuando el aparato
+  elegido ya no está.
+  **(2) La barra espaciadora no abría el micrófono.** Reproducido: con el foco
+  en el botón del micrófono la barra se disparaba **dos veces** (el botón la
+  recibe antes que la ventana), y en modo "reproducir/pausa" el botón abría el
+  micro mientras el atajo pausaba la música — exactamente lo que describió.
+  Ver lección 5.
+  **Además, a petición suya:** al abrir el micrófono, si "bajar música al
+  hablar" está marcado la música baja (como antes) y si NO lo está la música se
+  **pausa** y vuelve sola al cerrar; el modo "reproducir/pausa" fuerza el
+  reproductor pase lo que pase. Y **anti-acople**: opción de callar los
+  auriculares mientras haya un micrófono abierto (para cuando el monitor sale
+  por altavoces o por un Bluetooth que no son audífonos), más una red de
+  seguridad que corta el monitor si el limitador lleva 2 s recortando más de
+  6 dB con el micro abierto, avisando en la barra de estado.
+  233 comprobaciones en verde. — Estado: ✅ — Siguiente: sigue sin subir a GitHub.
 
 - [2026-08-24] **Varios micrófonos (invitados) y monitor de aire.**
   **(1) Mesa con varios micrófonos.** Nuevo `motor.CanalMicro`: cada micrófono

@@ -344,6 +344,110 @@ if va:
     check("al cerrarla deja de escuchar",
           va.vigilante.estado == "apagado", va.vigilante.estado)
 
+print("")
+print("=== La barra espaciadora funciona con el foco donde sea ===")
+config.guardar({"tecla_espacio": mod_app.ESPACIO_MICRO})
+a.mezclador.corriendo = True
+for c in a.mezclador.canales:
+    c.micro = MicroSimulado()
+
+def espacio_con_foco(widget):
+    """Pulsa la barra de verdad, con el foco puesto en ese widget."""
+    a.mezclador.canales[0].abierto = False
+    widget.focus_set()
+    a.update()
+    a.event_generate("<space>")
+    a.update()
+    return a.mezclador.canales[0].abierto
+
+for nombre, w in (("la ventana", a),
+                  ("el boton de play", a.btn_play),
+                  ("el boton del microfono", a.botones_micro[0]),
+                  ("la lista", a.tabla),
+                  ("el boton de grabar", a.btn_rec)):
+    check("abre el micro con el foco en %s" % nombre, espacio_con_foco(w))
+a.mezclador.canales[0].abierto = False
+a._pintar_micros()
+
+print("")
+print("=== La musica al abrir el microfono ===")
+a.lista.limpiar()
+a.lista.agregar(biblioteca.sondear(TONO))
+a._pintar_lista()
+a.siguiente_pista()
+for _ in range(10):
+    a.update()
+
+# con "bajar musica al hablar" MARCADO: la musica sigue sonando (baja sola)
+a.var_ducking.set(True)
+a._cambio_ducking()
+a.alternar_microfono(0)
+a.update()
+check("con el check puesto, la musica NO se para",
+      a.mezclador.pista_a.sonando)
+check("y el mezclador la baja solo", a.mezclador.ducking)
+a.alternar_microfono(0)
+a.update()
+check("al cerrar sigue sonando", a.mezclador.pista_a.sonando)
+
+# SIN el check: la musica se pausa mientras se habla y vuelve al cerrar
+a.var_ducking.set(False)
+a._cambio_ducking()
+a.alternar_microfono(0)
+a.update()
+check("sin el check, la musica se PAUSA", not a.mezclador.pista_a.sonando)
+check("el boton muestra el play", a.btn_play.cget("text") == mod_app.ICO_PLAY)
+a.alternar_microfono(0)
+a.update()
+check("al cerrar el micro la musica VUELVE", a.mezclador.pista_a.sonando)
+check("y el boton muestra la pausa",
+      a.btn_play.cget("text") == mod_app.ICO_PAUSA)
+
+# el modo "reproducir y pausa" manda por encima del check
+config.guardar({"tecla_espacio": mod_app.ESPACIO_PLAY})
+sonaba = a.mezclador.pista_a.sonando
+a._atajo_espacio()
+a.update()
+check("en modo reproducir, la barra pausa aunque el check este quitado",
+      a.mezclador.pista_a.sonando != sonaba)
+config.guardar({"tecla_espacio": mod_app.ESPACIO_MICRO})
+a.var_ducking.set(True)
+a._cambio_ducking()
+
+print("")
+print("=== Auriculares: cambiar de aparato y anti-acople ===")
+salidas = [n for _, n, _, _ in mod_app.audio.listar(entrada=False)]
+if len(salidas) >= 2:
+    config.guardar({"monitor": salidas[0], "monitor_activo": True})
+    a.mezclador.cambiar_monitor()
+    primero = a.mezclador._monitor_puesto
+    config.guardar({"monitor": salidas[1]})
+    ok_cambio, detalle = a.mezclador.cambiar_monitor()
+    check("cambiar de auriculares surte efecto",
+          a.mezclador._monitor_puesto == salidas[1] and
+          a.mezclador._monitor_puesto != primero,
+          "%s -> %s" % (primero[:18], a.mezclador._monitor_puesto[:18]))
+config.guardar({"monitor": "Auriculares que ya no existen"})
+a.mezclador.cambiar_monitor()
+check("avisa si el aparato elegido ya no esta",
+      "No se encontro" in (a.mezclador.aviso_monitor or ""),
+      (a.mezclador.aviso_monitor or "-")[:40])
+
+a.mezclador.monitor_mudo_con_micro = True
+a.mezclador.canales[0].abierto = True
+check("con el micro abierto, los auriculares se callan",
+      a.mezclador._ganancia_monitor() == 0.0)
+a.mezclador.canales[0].abierto = False
+check("y al cerrarlo vuelven",
+      a.mezclador._ganancia_monitor() == a.mezclador.vol_monitor)
+a.mezclador.monitor_mudo_con_micro = False
+
+a.mezclador.acople = True
+check("si hay acople, los auriculares se cortan",
+      a.mezclador._ganancia_monitor() == 0.0)
+a.mezclador.acople = False
+a.mezclador.corriendo = False
+
 print("\n=== Estado del aire ===")
 check("arranca fuera del aire", not a.emisor.al_aire)
 check("el boton dice SALIR AL AIRE", a.btn_aire.cget("text") == "SALIR AL AIRE",

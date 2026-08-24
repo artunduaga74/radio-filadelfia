@@ -94,6 +94,12 @@ class Mezclador:
         self.vol_efectos = float(config.get("vol_efectos", 0.85))
         self.vol_monitor = float(config.get("volumen_monitor", 0.8))
         self.monitor_activo = bool(config.get("monitor_activo", True))
+        self.monitor_mudo_con_micro = bool(config.get("monitor_mudo_con_micro"))
+        self.proteccion_acople = bool(config.get("proteccion_acople", True))
+        self.acople = False               # se ha detectado realimentacion
+        self.aviso_monitor = ""
+        self._monitor_puesto = config.get("monitor") or ""
+        self._apretado_desde = 0.0        # cuanto lleva el limitador sufriendo
 
         self.ducking = bool(config.get("ducking", True))
         self._duck = 1.0                  # factor actual (1 = sin bajar)
@@ -169,7 +175,14 @@ class Mezclador:
         a 48000, y sin eso la salida falla con "Invalid sample rate" y uno se
         queda sin monitor sin enterarse.
         """
-        idx = audio.buscar(config.get("monitor") or "", entrada=False)
+        nombre = config.get("monitor") or ""
+        idx = audio.buscar(nombre, entrada=False)
+        self.aviso_monitor = ""
+        if nombre and idx is None:
+            # antes se caia sin avisar en el aparato por defecto del sistema,
+            # que casi siempre no es el que uno habia elegido
+            self.aviso_monitor = ("No se encontro '%s'. Sonara por la salida "
+                                  "del sistema." % nombre)
         intentos = (
             ("con conversion de Windows", audio.ajustes_wasapi(idx)),
             ("directo", None),
@@ -182,7 +195,7 @@ class Mezclador:
                     channels=CANALES, dtype="float32", latency="low",
                     extra_settings=extras)
                 self._salida.start()
-                self.error = ""
+                self.error = self.aviso_monitor
                 return True
             except Exception as e:
                 ultimo = str(e)
@@ -190,6 +203,33 @@ class Mezclador:
         self.error = ("No se pudo abrir el monitor (%s): %s"
                       % (config.get("monitor") or "el del sistema", ultimo))
         return False
+
+    def cambiar_monitor(self):
+        """
+        Cierra la salida que este abierta y abre la que se acabe de elegir.
+
+        Hace falta porque el monitor solo se abria al arrancar el mezclador:
+        cambiar de auriculares en Configuracion no surtia ningun efecto y
+        se seguia oyendo por el aparato de antes.
+        """
+        s, self._salida = self._salida, None
+        if s:
+            try:
+                s.stop()
+                s.close()
+            except Exception:
+                pass
+        self._monitor_puesto = config.get("monitor") or ""
+        self.monitor_activo = bool(config.get("monitor_activo", True))
+        if not self.monitor_activo:
+            self.error = ""
+            return True, "Monitor apagado."
+        if not self.corriendo:
+            return True, "Se abrira al arrancar."
+        if self._abrir_monitor():
+            return True, "Ahora suena por: %s" % (self._monitor_puesto
+                                                  or "la salida del sistema")
+        return False, self.error
 
     def probar_monitor(self, segundos=1.0, hz=440.0):
         """
@@ -275,7 +315,7 @@ class Mezclador:
             if self._salida is not None:
                 try:
                     # esto bloquea el tiempo del bloque: es nuestro reloj
-                    self._salida.write(bloque * self.vol_monitor)
+                    self._salida.write(bloque * self._ganancia_monitor())
                 except Exception:
                     self._salida = None
             else:
@@ -286,12 +326,51 @@ class Mezclador:
                 else:
                     siguiente = time.perf_counter()   # ibamos tarde: al dia
 
+            self._vigilar_acople()
             contador += 1
             if self.al_medir and contador % 3 == 0:   # ~14 avisos por segundo
                 try:
                     self.al_medir(self.niveles)
                 except Exception:
                     pass
+
+    def _ganancia_monitor(self):
+        """
+        Cuanto sale por los auriculares. Cero cuando hay riesgo de acople.
+
+        Si el monitor va a unos altavoces (o a un aparato Bluetooth que no son
+        auriculares), abrir el microfono monta el pitido de siempre: el micro
+        se oye a si mismo. Con `monitor_mudo_con_micro` se callan mientras haya
+        un microfono abierto, que es lo que hacen las emisoras de verdad con
+        los altavoces del estudio.
+        """
+        if self.acople:
+            return 0.0
+        if self.monitor_mudo_con_micro and self.micro_abierto:
+            return 0.0
+        return self.vol_monitor
+
+    def _vigilar_acople(self):
+        """
+        Red de seguridad: si con el microfono abierto el limitador lleva un
+        buen rato recortando a base de bien, casi seguro es realimentacion.
+        Se callan los auriculares y se avisa, en vez de dejar el pitido al aire.
+        """
+        if not self.proteccion_acople:
+            self.acople = False
+            return
+        apretando = (self.micro_abierto
+                     and self.niveles.get("reduccion", 0.0) < -6.0)
+        ahora = time.perf_counter()
+        if apretando:
+            if not self._apretado_desde:
+                self._apretado_desde = ahora
+            elif ahora - self._apretado_desde > 2.0:
+                self.acople = True
+        else:
+            self._apretado_desde = 0.0
+            if self.acople and not self.micro_abierto:
+                self.acople = False        # al cerrar el micro, se rearma
 
     # ------------------------------------------------------------ la mezcla
 
@@ -370,6 +449,11 @@ class Mezclador:
         self.vol_efectos = float(config.get("vol_efectos", 0.85))
         self.vol_monitor = float(config.get("volumen_monitor", 0.8))
         self.ducking = bool(config.get("ducking", True))
+        self.monitor_mudo_con_micro = bool(config.get("monitor_mudo_con_micro"))
+        self.proteccion_acople = bool(config.get("proteccion_acople", True))
+        # si han cambiado los auriculares, se reabre la salida al momento
+        if (config.get("monitor") or "") != self._monitor_puesto or                 bool(config.get("monitor_activo", True)) != self.monitor_activo:
+            self.cambiar_monitor()
         activo = bool(config.get("eq_activo", True))
         for aj, c in zip(config.microfonos(), self.canales):
             c.nombre = aj.get("nombre") or c.nombre
