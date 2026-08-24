@@ -1,0 +1,180 @@
+# -*- coding: utf-8 -*-
+"""Comprobaciones de la ventana. Escribe la config en una carpeta de PRUEBAS."""
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import config
+
+pruebas = Path(tempfile.mkdtemp(prefix="radio_ui_"))
+config.ARCHIVO_AJUSTES = pruebas / "ajustes.json"
+config.ARCHIVO_CLAVES = pruebas / "credenciales.env"
+config.CARPETA_DATOS = pruebas / "datos"
+config.CARPETA_GRABA = pruebas / "grabaciones"
+config._cache = None
+
+import tkinter as tk
+import biblioteca
+import app as mod_app
+
+CARPETA = Path(__file__).parent / "medios"
+TONO = str(CARPETA / "tono.wav")
+JINGLE = str(CARPETA / "jingle.wav")
+
+ok, fallos = 0, []
+
+
+def check(nombre, cond, detalle=""):
+    global ok
+    if cond:
+        ok += 1
+        print("  OK   %s %s" % (nombre, detalle))
+    else:
+        fallos.append(nombre)
+        print("  FALLA %s %s" % (nombre, detalle))
+
+
+print("\n=== Abriendo la ventana ===")
+a = mod_app.App()
+a.update()
+a.update_idletasks()
+check("la ventana cabe en la pantalla",
+      a.winfo_width() <= a.winfo_screenwidth() and
+      a.winfo_height() <= a.winfo_screenheight() - 30,
+      "%dx%d en pantalla %dx%d" % (a.winfo_width(), a.winfo_height(),
+                                   a.winfo_screenwidth(), a.winfo_screenheight()))
+a.update()
+a.update_idletasks()
+check("la ventana abre", a.winfo_exists())
+check("titulo correcto", a.title() == mod_app.TITULO, a.title())
+
+print("\n=== Todo cabe en la ventana ===")
+alto_ventana = a.winfo_height()
+for nombre, w in (("boton AL AIRE", a.btn_aire),
+                  ("boton microfono", a.btn_micro),
+                  ("lista", a.tabla),
+                  ("vumetro del aire", a.vu["aire_i"]),
+                  ("grafico de oyentes", a.grafico),
+                  ("barra de estado", a.lbl_msg)):
+    y = w.winfo_rooty() - a.winfo_rooty()
+    dentro = w.winfo_ismapped() and 0 <= y < alto_ventana and w.winfo_width() > 1
+    check("se ve: %s" % nombre, dentro,
+          "y=%d alto=%d ancho=%d" % (y, w.winfo_height(), w.winfo_width()))
+
+print("\n=== Ventana pequena (minimo) ===")
+a.geometry("940x620")
+a.update()
+a.update_idletasks()
+alto_ventana = a.winfo_height()
+for nombre, w in (("boton AL AIRE", a.btn_aire),
+                  ("boton microfono", a.btn_micro),
+                  ("barra de estado", a.lbl_msg)):
+    y = w.winfo_rooty() - a.winfo_rooty()
+    check("sigue visible en 940x620: %s" % nombre,
+          w.winfo_ismapped() and 0 <= y < alto_ventana, "y=%d" % y)
+a.geometry("1180x720")
+a.update()
+
+print("\n=== Lista de reproduccion ===")
+a.lista.agregar(biblioteca.sondear(TONO))
+a.lista.agregar(biblioteca.sondear(JINGLE))
+a._pintar_lista()
+a.update()
+check("aparecen las 2 pistas", len(a.tabla.get_children()) == 2,
+      "%d filas" % len(a.tabla.get_children()))
+check("muestra el resumen", "2 pistas" in a.lbl_lista.cget("text"),
+      a.lbl_lista.cget("text"))
+
+a.var_busca.set("jingle")
+a._filtrar()
+a.update()
+check("el buscador filtra", len(a.tabla.get_children()) == 1,
+      "%d filas" % len(a.tabla.get_children()))
+a.var_busca.set("")
+a._filtrar()
+
+a.tabla.selection_set("0")
+a.mover_seleccion(1)
+check("se puede reordenar", a.lista.pistas[1]["ruta"] == TONO)
+a.tabla.selection_set("0")
+a.quitar_seleccion()
+check("se puede quitar", len(a.lista.pistas) == 1)
+
+print("\n=== Reproduccion (sin salir al aire) ===")
+a.lista.limpiar()
+a.lista.agregar(biblioteca.sondear(TONO))
+a._pintar_lista()
+a.siguiente_pista()
+for _ in range(20):
+    a.update()
+p = a.mezclador.pista_a
+check("la pista quedo cargada", p.ruta == TONO)
+check("esta sonando", p.sonando)
+check("el titulo aparece en pantalla", a.lbl_pista.cget("text") != "- nada -",
+      a.lbl_pista.cget("text"))
+check("la fila se marca como sonando", "sonando" in a.tabla.item("0", "tags"))
+a.play_pausa()
+check("pausa funciona", not p.sonando)
+check("el boton cambia a Reproducir", a.btn_play.cget("text") == "Reproducir")
+a.play_pausa()
+check("reanuda", p.sonando)
+
+print("\n=== Vumetros ===")
+a.mezclador.niveles = {"micro": -6.0, "musica": -20.0, "efectos": -60.0,
+                       "aire_i": -3.0, "aire_d": -3.0, "reduccion": 0.0}
+a._tic_rapido()
+a.update()
+encendidos = sum(1 for i in range(28)
+                 if a.vu["micro"].itemcget("seg%d" % i, "fill") != mod_app.estilo.VU_APAGADO)
+check("el vumetro del micro se enciende", encendidos > 20, "%d segmentos" % encendidos)
+apagados = sum(1 for i in range(28)
+               if a.vu["efectos"].itemcget("seg%d" % i, "fill") == mod_app.estilo.VU_APAGADO)
+check("en silencio queda apagado", apagados >= 27, "%d apagados" % apagados)
+
+print("\n=== Cortinas ===")
+a.cortinas[0] = JINGLE
+a.disparar_cortina(0)
+for _ in range(5):
+    a.update()
+check("la cortina suena encima", len(a.mezclador.efectos) == 1)
+a.mezclador.parar_efectos()
+
+print("\n=== Estado del aire ===")
+check("arranca fuera del aire", not a.emisor.al_aire)
+check("el boton dice SALIR AL AIRE", a.btn_aire.cget("text") == "SALIR AL AIRE",
+      a.btn_aire.cget("text"))
+check("el micro arranca cerrado", not a.mezclador.micro_abierto)
+
+print("\n=== Configuracion ===")
+config.guardar({"vol_musica": 0.55})
+a.mezclador.aplicar_ajustes()
+check("los faders llegan al mezclador", abs(a.mezclador.vol_musica - 0.55) < 0.01,
+      "%.2f" % a.mezclador.vol_musica)
+
+print("\n=== Cierre limpio ===")
+a.vigilante.detener()
+a.emisor.detener()
+a.mezclador.detener()
+existia = a.winfo_exists()
+a.destroy()
+try:
+    cerrada = not a.winfo_exists()
+except tk.TclError:
+    cerrada = True
+check("la ventana se cerro", existia and cerrada)
+
+import procesos
+procesos.cerrar_todos()
+vivos = [p for p in procesos._vivos if p.poll() is None]
+check("no quedan procesos sueltos", len(vivos) == 0, "%d vivos" % len(vivos))
+
+print("\n" + "=" * 60)
+print("  %d comprobaciones OK, %d fallos" % (ok, len(fallos)))
+if fallos:
+    print("  Fallaron: " + ", ".join(fallos))
+print("  Config de pruebas en: %s" % pruebas)
+print("=" * 60)
+sys.exit(1 if fallos else 0)

@@ -1,0 +1,8 @@
+# Estudio de transmision - Voz de Filadelfia
+# Instalar con:  pip install -r requirements.txt
+#
+# Ademas hace falta ffmpeg en el PATH:  winget install Gyan.FFmpeg
+
+numpy>=1.26
+sounddevice>=0.4.6
+soundfile>=0.12

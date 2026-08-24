@@ -1,0 +1,146 @@
+# CLAUDE.md — Estudio de transmisión "Voz de Filadelfia"
+
+> Memoria del proyecto. Leer completo antes de tocar código.
+
+## 1. Qué es
+
+Aplicación de escritorio (Windows) para que Erick transmita **en vivo** a su
+emisora web. Sustituye a tener que usar BUTT/Mixxx: mezcla micrófono, música y
+cortinas, saca la señal al servidor, graba el programa y muestra los oyentes.
+
+**Usuario único:** Erick. **Objetivo declarado:** publicar la emisora la semana
+del 2026-08-24.
+
+Referencia de estilo pedida por el usuario: **RadioBOSS** ("esa me encanta").
+Elegante, con todo a la vista, sin cosas de DJ que no usa.
+
+## 2. El servidor (medido, no supuesto — 2026-08-23)
+
+Proveedor: **asurahosting**, panel **Centova Cast**, plan Starter.
+Host: `cast1.asurahosting.com` · cuenta `nonefern`
+
+| Puerto | Qué es realmente |
+|---|---|
+| 8024 | DNAS **2.6.1.777** — oyentes. 128 kbps, **44100 Hz**, tope 120 |
+| 8025 | fuente v1 del DNAS (sin autoDJ) |
+| **8026** | **`Liquidsoap source harbor`** — el autoDJ. **Habla protocolo Icecast** |
+| 8027 | el mismo harbor en modo SHOUTcast v1 (el "+1" que suman los codificadores) |
+
+**Consecuencia clave:** aunque el panel dice "Shoutcast (v1)", el servidor es
+DNAS v2 en modo compatible y el harbor acepta Icecast → **ffmpeg conecta
+directo con `icecast://` y NO hace falta escribir un cliente ICY a mano.** Ese
+era el único riesgo técnico del proyecto.
+
+**Estadísticas SIN contraseña** (esto abarató todo el monitoreo):
+```
+http://cast1.asurahosting.com:8024/stats?sid=1&json=1
+  -> currentlisteners, peaklisteners, maxlisteners, songtitle, streamuptime...
+```
+Metadata ("sonando ahora"): `/admin/metadata` (Icecast) o `/admin.cgi?mode=updinfo`.
+
+**Ajustes del panel que condicionan el diseño:**
+- "Desconectar fuentes inactivas después de: **30 segundos**" → de ahí el
+  reloj de pared (ver §3).
+- "Desconectar a los oyentes si se desconecta la fuente: **No**" → si se cae
+  el internet, los oyentes se quedan y el autoDJ retoma. Está bien así.
+
+**Credenciales:** usuario y clave de una **Cuenta de DJ** (Centova →
+Configuración → Cuentas de DJ), NO la clave del panel. Van en
+`credenciales.env`, que está en `.gitignore`. **Nunca pedirlas por chat ni
+escribirlas en ningún archivo versionado.**
+
+## 3. Las dos decisiones que sostienen el diseño
+
+**1. Un solo ffmpeg, que nunca se reinicia.** Arranca al salir al aire y recibe
+audio hasta que se corta. Cambiar de canción, disparar un jingle o abrir el
+micrófono ocurre *antes*, en el mezclador. El servidor solo ve un chorro
+continuo → no hay cortes al aire. **No romper esto nunca**: cualquier diseño
+que reinicie ffmpeg al cambiar de pista corta la emisión.
+
+**2. Reloj de pared.** Si el mezclador se atrasa, `emisor._escritor` escribe
+silencio en vez de esperar. Con el corte a los 30 s del servidor, quedarse
+callado un instante es infinitamente mejor que quedarse quieto.
+
+Corolario: `Emisor.enviar()` **tira el bloque más viejo** si la cola se llena.
+Preferimos perder 20 ms de audio antes que frenar el hilo del mezclador.
+
+## 4. Arquitectura
+
+```
+app.py             ventana: lista, mezclador, oyentes + diálogo de configuración
+motor.py           Mezclador: suma micrófono + música + cortinas, ducking, limitador
+audio.py           dispositivos, Microfono (sounddevice), Pista (decodifica por ffmpeg)
+emisor.py          Emisor: ffmpeg -> icecast://, reconexión, grabación simultánea
+servidor.py        estado(), actualizar_titulo(), Historial (SQLite), Vigilante
+biblioteca.py      Biblioteca (índice de carpeta) y Lista (reproducción)
+config.py          ajustes PORTABLES (junto a la app) + credenciales aparte
+estilo.py          tema, px() para DPI, Vumetro y Grafico propios
+procesos.py        job object de Windows: ningún ffmpeg sobrevive a la app
+prueba_conexion.py busca solo puerto/protocolo/mount contra el servidor
+pruebas/           61 comprobaciones automáticas
+```
+
+**Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
+Windows). ffmpeg convierte a 44100 Hz en la misma pasada con soxr, gratis. No
+resamplear en Python.
+
+**Hilos:** el mezclador corre en su propio hilo; el reloj lo marca la tarjeta
+de sonido cuando el monitor está encendido (`OutputStream.write` bloquea justo
+el tiempo del bloque) y por tiempo cuando no lo está.
+**tkinter no es seguro entre hilos**: la ventana consulta `mezclador.niveles`
+con `after(60ms)`; el hilo de audio nunca toca un widget.
+
+## 5. Lecciones ya pagadas (no repetir)
+
+1. **`pack` reparte el espacio por ORDEN.** La barra de estado debe
+   empaquetarse ANTES que el cuerpo con `expand=True`, o se queda de 1 píxel.
+   *Ya pasó en el editor de video del transcriptor y volvió a pasar aquí.*
+2. **`px()` cuenta el escalado de Windows.** Al 150 %, una ventana "de 1180"
+   mide 1770 px reales y no cabe en 1920×1080. Siempre recortar al tamaño de
+   pantalla disponible.
+3. **Los estilos derivados de `ttk.Scale` necesitan la orientación en el
+   nombre**: `Caja.Horizontal.TScale`, no `Caja.TScale` (si no: *Layout not
+   found*).
+4. **El filtro `sine` de ffmpeg genera a −21 dB**, no a fondo de escala. Una
+   tanda de pruebas "falló" por esto con el código correcto. Usar `aevalsrc`
+   con amplitud explícita.
+5. **Drenar siempre el stderr de ffmpeg en un hilo.** Si se llenan los 64 KB de
+   la tubería, ffmpeg se bloquea para siempre.
+6. **Las pruebas NO deben escribir en la configuración real.** Redirigir
+   `config.ARCHIVO_AJUSTES` y compañía a una carpeta temporal *antes* de
+   importar la app. (En el transcriptor unas pruebas dejaron basura en los
+   "recientes" del usuario.)
+
+## 6. Estado y qué sigue
+
+**Hecho y probado (2026-08-23):** los 10 módulos, 61 comprobaciones en verde
+(28 del motor midiendo audio real, 33 de la ventana). El monitoreo de oyentes
+verificado contra el servidor real.
+
+**⛔ GATE PENDIENTE — lo único que falta para darlo por bueno:** el usuario debe
+correr `python prueba_conexion.py` con su usuario y clave de DJ. **Nunca se ha
+transmitido de verdad al servidor**, porque hace falta esa clave. Hasta que ese
+gate pase, no dar por funcionando la emisión.
+
+**Backlog (no construir sin pedirlo):**
+- Icono propio y `.exe` portable con PyInstaller.
+- Programación por horarios (parrilla) — ojo: el 24/7 conviene dejarlo en el
+  servidor; la app solo toma el aire en vivo.
+- Cartwall más grande que 4 cortinas.
+- Procesado tipo radio (compresor multibanda). Con `loudnorm`/`compand` se
+  llega al 70-80 %; al 100 % no (eso es Stereo Tool/Omnia).
+- Integrar los MP3 que genera la skill `audio-emisora`.
+
+## 7. Bitácora
+
+> Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-23] **Proyecto creado, código completo y probado.** Estudio de
+  factibilidad → investigación del servidor midiendo puertos (ver §2) → 10
+  módulos → 61 comprobaciones en verde. Dos fallos reales encontrados por las
+  pruebas y corregidos: barra de estado de 1 px por el orden del `pack`, y
+  ventana por defecto más alta que la pantalla (se reorganizó el panel de
+  oyentes a la columna izquierda porque la derecha pedía 917 px de 749). El
+  proyecto vivió un rato dentro del repo `biblioteca-semantica` y se movió a
+  repositorio propio a petición del usuario. — Estado: 🔄 falta el gate de
+  conexión real — Siguiente: `python prueba_conexion.py` y publicar la emisora.

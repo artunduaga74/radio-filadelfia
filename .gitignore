@@ -1,0 +1,22 @@
+# --- SECRETOS: nunca deben salir de este equipo
+credenciales.env
+*.env
+!*.env.example
+
+# --- lo que genera la aplicacion al usarse
+ajustes.json
+datos/
+grabaciones/
+error_arranque.log
+
+# --- Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- editores / sistema
+.vscode/
+.claude/
+Thumbs.db
+desktop.ini
