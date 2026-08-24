@@ -104,7 +104,7 @@ procesos.py        job object de Windows: ningún ffmpeg sobrevive a la app
 prueba_conexion.py busca solo el puerto y la forma de clave correctos
 eq.py              ecualizador de voz (biquads + scipy), con ajustes de fábrica
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
-pruebas/           161 comprobaciones automáticas
+pruebas/           170 comprobaciones automáticas
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -149,7 +149,7 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
 ## 6. Estado y qué sigue
 
 **Hecho y probado (2026-08-24):** los 11 módulos, **94 comprobaciones en
-verde** (33 del motor, 39 del emisor/ICY, 34 del ecualizador y el grabador, 55 de la
+verde** (33 del motor, 39 del emisor/ICY, 34 del ecualizador y el grabador, 64 de la
 ventana). Todo lo de audio se mide: dB reales, no "parece que suena".
 
 **⛔ GATE PENDIENTE — lo único que falta para darlo por bueno:** el usuario debe
@@ -170,6 +170,18 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **La barra espaciadora abre el micrófono (configurable).**
+  Pedido del usuario: que la barra sea el botón del micrófono, con opción de
+  desactivarla, pero activa de fábrica. Nuevo ajuste `tecla_espacio` con tres
+  valores — `microfono` (por defecto), `reproducir` y `nada` — elegible en
+  Configuración → Audio. `_atajo_espacio()` lee el ajuste en cada pulsación,
+  así que el cambio surte efecto sin reiniciar. **F1 (micrófono) y F2
+  (grabar) siguen valiendo siempre**, como red de seguridad. `_atajo()` ahora
+  también ignora Combobox y Spinbox además de Entry y Text: escribir el título
+  del programa no puede abrir el micrófono a cada espacio. 170 comprobaciones
+  en verde. — Estado: ✅ — Siguiente: nada pendiente por parte del usuario;
+  queda subir el repositorio a GitHub y la decisión del autoDJ.
 
 - [2026-08-24] **FIX: el monitor no sonaba por los auriculares Bluetooth.**
   El usuario preguntó si el monitoreo estaba habilitado. Estaba, pero **fallaba

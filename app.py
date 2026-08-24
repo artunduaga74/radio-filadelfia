@@ -40,6 +40,16 @@ TITULO = "Voz de Filadelfia - Estudio"
 # como se llaman los protocolos en pantalla
 CORTINAS = 4          # cuantos botones de cortina hay
 
+# Que hace la barra espaciadora (se elige en Configuracion > Audio)
+ESPACIO_MICRO = "microfono"
+ESPACIO_PLAY = "reproducir"
+ESPACIO_NADA = "nada"
+ESPACIO_TEXTOS = {
+    ESPACIO_MICRO: "Abrir y cerrar el microfono",
+    ESPACIO_PLAY: "Reproducir / pausa",
+    ESPACIO_NADA: "Nada (desactivada)",
+}
+
 ICO_PLAY = "▶"          # play
 ICO_PAUSA = "⏸"         # pausa
 ICO_PARAR = "⏹"         # parar
@@ -146,16 +156,32 @@ class App(tk.Tk):
 
         self.config(menu=barra)
 
-        self.bind("<space>", lambda e: self._atajo(self.play_pausa))
+        # La barra espaciadora se decide en Configuracion (por defecto, el
+        # microfono). F1 y F2 valen siempre, hagan lo que hagan los demas.
+        self.bind("<space>", lambda e: self._atajo_espacio())
         self.bind("<F1>", lambda e: self._atajo(self.alternar_microfono))
         self.bind("<F2>", lambda e: self._atajo(self.alternar_grabacion))
         self.bind("<Control-Right>", lambda e: self._atajo(self.siguiente_pista))
 
     def _atajo(self, funcion):
-        if isinstance(self.focus_get(), (tk.Entry, ttk.Entry, tk.Text)):
+        """
+        Ejecuta el atajo, salvo que se este escribiendo en algun campo: si no,
+        poner el titulo del programa abriria el microfono a cada espacio.
+        """
+        foco = self.focus_get()
+        if isinstance(foco, (tk.Entry, ttk.Entry, tk.Text, ttk.Combobox,
+                             ttk.Spinbox)):
             return
         funcion()
         return "break"
+
+    def _atajo_espacio(self):
+        accion = config.get("tecla_espacio", ESPACIO_MICRO)
+        if accion == ESPACIO_MICRO:
+            return self._atajo(self.alternar_microfono)
+        if accion == ESPACIO_PLAY:
+            return self._atajo(self.play_pausa)
+        return None                    # desactivada
 
     # ---------------------------------------------------------------- montaje
 
@@ -391,6 +417,7 @@ class App(tk.Tk):
                                     style="MicOff.TButton",
                                     command=self.alternar_microfono)
         self.btn_micro.pack(side="left")
+        Consejo(self.btn_micro, "Abrir o cerrar el microfono al aire   (F1)")
         self.var_ducking = tk.BooleanVar(value=bool(config.get("ducking", True)))
         ttk.Checkbutton(acciones, text="Bajar musica al hablar",
                         variable=self.var_ducking, style="Caja.TCheckbutton",
@@ -998,15 +1025,19 @@ class App(tk.Tk):
         tabla.pack(fill="both", expand=True, padx=px(10), pady=px(8))
 
     def ver_atajos(self):
+        espacio = ESPACIO_TEXTOS.get(config.get("tecla_espacio", ESPACIO_MICRO),
+                                     ESPACIO_TEXTOS[ESPACIO_MICRO])
         messagebox.showinfo(
             "Atajos",
-            "Barra espaciadora .... reproducir / pausa\n"
+            "Barra espaciadora .... %s\n"
             "F1 ................... abrir / cerrar el microfono\n"
             "F2 ................... empezar / parar la grabacion\n"
             "Ctrl + flecha der .... siguiente pista\n"
             "Doble clic en la lista  reproducir esa pista\n"
-            "Clic derecho en una cortina  asignarle un archivo",
-            parent=self)
+            "Clic derecho en una cortina  asignarla o renombrarla\n\n"
+            "La barra espaciadora se elige en Configuracion > Audio.\n"
+            "Mientras se escribe en un campo, los atajos no actuan."
+            % espacio.lower(), parent=self)
 
     # ---------------------------------------------------------------- cierre
 
@@ -1199,9 +1230,26 @@ class DialogoConfig(tk.Toplevel):
 
         ttk.Separator(f, orient="horizontal").grid(row=8, column=0, columnspan=2,
                                                    sticky="ew", pady=px(8))
+        ttk.Label(f, text="Barra espaciadora:").grid(row=9, column=0, sticky="w",
+                                                     pady=px(4))
+        self.var_espacio = tk.StringVar(
+            value=ESPACIO_TEXTOS.get(config.get("tecla_espacio", ESPACIO_MICRO),
+                                     ESPACIO_TEXTOS[ESPACIO_MICRO]))
+        ttk.Combobox(f, textvariable=self.var_espacio, state="readonly", width=30,
+                     values=[ESPACIO_TEXTOS[k] for k in
+                             (ESPACIO_MICRO, ESPACIO_PLAY, ESPACIO_NADA)]).grid(
+            row=9, column=1, sticky="w")
+        ttk.Label(f, text="F1 abre el microfono y F2 graba, elijas lo que elijas. "
+                          "Mientras se escribe en un campo, la barra no hace nada.",
+                  style="Suave.TLabel").grid(row=10, column=0, columnspan=2,
+                                             sticky="w")
+
+        ttk.Separator(f, orient="horizontal").grid(row=11, column=0, columnspan=2,
+                                                   sticky="ew", pady=px(8))
         ttk.Label(f, text="Cambiar de microfono o de auriculares exige volver a "
                           "salir al aire.",
-                  style="Suave.TLabel").grid(row=9, column=0, columnspan=2, sticky="w")
+                  style="Suave.TLabel").grid(row=12, column=0, columnspan=2,
+                                             sticky="w")
 
     def probar_monitor(self):
         """Un pitido por los auriculares elegidos, sin tocar la emision."""
@@ -1406,6 +1454,8 @@ class DialogoConfig(tk.Toplevel):
         datos["microfono"] = self.var_micro.get()
         datos["monitor"] = self.var_monitor.get()
         datos["monitor_activo"] = self.var_mon_act.get()
+        inverso = {v: k for k, v in ESPACIO_TEXTOS.items()}
+        datos["tecla_espacio"] = inverso.get(self.var_espacio.get(), ESPACIO_MICRO)
         datos["ducking"] = self.var_duck.get()
         datos["ducking_nivel"] = round(self.var_duck_niv.get() / 100.0, 2)
         datos["carpeta_musica"] = self.var_carpeta.get().strip()

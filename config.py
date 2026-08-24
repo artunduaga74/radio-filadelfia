@@ -78,6 +78,10 @@ DEFECTOS = {
     "ducking_salida_ms": 700,
 
     # --- carpetas de trabajo
+    # --- teclado
+    # Que hace la barra espaciadora: "microfono" | "reproducir" | "nada"
+    "tecla_espacio": "microfono",
+
     # --- ecualizador del microfono
     "eq_activo": True,
     "eq_preset": "Voz clara",

@@ -24,6 +24,8 @@ config.CARPETA_GRABA = pruebas / "grabaciones"
 config._cache = None
 
 import tkinter as tk
+import numpy as np
+
 import biblioteca
 import app as mod_app
 
@@ -218,6 +220,76 @@ check("al quitarla vuelve a su numero",
 check("las demas siguen numeradas",
       [b.cget("text") for b in a.botones_cortina[1:]] == ["2", "3", "4"],
       str([b.cget("text") for b in a.botones_cortina[1:]]))
+
+print("")
+print("=== Barra espaciadora configurable ===")
+check("por defecto abre el microfono",
+      config.get("tecla_espacio") == mod_app.ESPACIO_MICRO,
+      repr(config.get("tecla_espacio")))
+
+class FocoFalso:
+    """Para simular que el foco NO esta en un campo de texto."""
+    pass
+
+a.focus_get = lambda: None          # como si el foco estuviera en la ventana
+
+class MicroSimulado:
+    """El micro real puede no abrirse en un equipo de pruebas; simulamos uno."""
+    abierto = True
+    error = ""
+
+    def leer(self, n):
+        return np.zeros((n, 2), dtype=np.float32)
+
+    def cerrar(self):
+        pass
+
+a.mezclador.micro = MicroSimulado()
+a.mezclador.micro_abierto = False
+antes_musica = a.mezclador.pista_a.sonando
+a._atajo_espacio()
+a.update()
+check("la barra ABRE el microfono", a.mezclador.micro_abierto is True)
+check("el boton se pone en rojo",
+      str(a.btn_micro.cget("style")) == "MicOn.TButton",
+      str(a.btn_micro.cget("style")))
+check("y NO toca la musica", a.mezclador.pista_a.sonando == antes_musica)
+a._atajo_espacio()
+a.update()
+check("y la barra lo CIERRA", a.mezclador.micro_abierto is False)
+check("el boton vuelve a apagado",
+      str(a.btn_micro.cget("style")) == "MicOff.TButton")
+
+config.guardar({"tecla_espacio": mod_app.ESPACIO_PLAY})
+sonaba = a.mezclador.pista_a.sonando
+a._atajo_espacio()
+a.update()
+check("puesta en reproducir, la barra da al play/pausa",
+      a.mezclador.pista_a.sonando != sonaba,
+      "%s -> %s" % (sonaba, a.mezclador.pista_a.sonando))
+
+config.guardar({"tecla_espacio": mod_app.ESPACIO_NADA})
+sonaba = a.mezclador.pista_a.sonando
+micro = a.mezclador.micro_abierto
+a._atajo_espacio()
+a.update()
+check("desactivada, la barra no hace nada",
+      a.mezclador.pista_a.sonando == sonaba and
+      a.mezclador.micro_abierto == micro)
+
+config.guardar({"tecla_espacio": mod_app.ESPACIO_MICRO})
+
+class EntryFalso(tk.Entry):
+    pass
+
+campo = tk.Entry(a)
+a.focus_get = lambda: campo
+micro = a.mezclador.micro_abierto
+a._atajo_espacio()
+check("escribiendo en un campo, la barra no dispara nada",
+      a.mezclador.micro_abierto == micro)
+campo.destroy()
+a.focus_get = lambda: None
 
 print("\n=== Estado del aire ===")
 check("arranca fuera del aire", not a.emisor.al_aire)
