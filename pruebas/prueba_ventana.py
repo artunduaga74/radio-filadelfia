@@ -9,6 +9,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
 
+# la consola de Windows viene en cp1252 y no sabe pintar los
+# iconos del reproductor; sin esto, un print rompe la prueba
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 pruebas = Path(tempfile.mkdtemp(prefix="radio_ui_"))
 config.ARCHIVO_AJUSTES = pruebas / "ajustes.json"
 config.ARCHIVO_CLAVES = pruebas / "credenciales.env"
@@ -118,7 +125,9 @@ check("el titulo aparece en pantalla", a.lbl_pista.cget("text") != "- nada -",
 check("la fila se marca como sonando", "sonando" in a.tabla.item("0", "tags"))
 a.play_pausa()
 check("pausa funciona", not p.sonando)
-check("el boton cambia a Reproducir", a.btn_play.cget("text") == "Reproducir")
+check("el boton cambia al icono de play",
+      a.btn_play.cget("text") == mod_app.ICO_PLAY,
+      repr(a.btn_play.cget("text")))
 a.play_pausa()
 check("reanuda", p.sonando)
 
@@ -141,6 +150,43 @@ for _ in range(5):
     a.update()
 check("la cortina suena encima", len(a.mezclador.efectos) == 1)
 a.mezclador.parar_efectos()
+
+print("")
+print("=== Botones de transporte con iconos ===")
+import tkinter.font as tkfont
+fuente = tkfont.Font(family="Segoe UI Symbol", size=15)
+for nombre, icono in (("play", mod_app.ICO_PLAY), ("pausa", mod_app.ICO_PAUSA),
+                      ("parar", mod_app.ICO_PARAR),
+                      ("siguiente", mod_app.ICO_SIGUIENTE),
+                      ("grabar", mod_app.ICO_REC)):
+    check("el icono de %s se dibuja" % nombre, fuente.measure(icono) > 3,
+          "%d px" % fuente.measure(icono))
+check("los botones siguen grandes", a.btn_play.winfo_width() >= 30,
+      "%d px de ancho" % a.btn_play.winfo_width())
+
+print("")
+print("=== Boton de grabar (independiente del aire) ===")
+check("arranca sin grabar", not a.grabador.grabando)
+check("dice Grabar", "Grabar" in a.btn_rec.cget("text"))
+a.alternar_grabacion()
+for _ in range(10):
+    a.update()
+check("empieza a grabar sin estar al aire",
+      a.grabador.grabando and not a.emisor.al_aire)
+a._pintar_grabacion()
+a.update()
+check("el boton se pone en rojo",
+      str(a.btn_rec.cget("style")) == "RecOn.TButton", str(a.btn_rec.cget("style")))
+check("la barra de estado lo dice",
+      "grabando" in a.lbl_grabando.cget("text"), a.lbl_grabando.cget("text"))
+archivo = a.grabador.archivo
+a.alternar_grabacion()
+a.update()
+check("se puede parar", not a.grabador.grabando)
+check("y queda el archivo", bool(archivo) and Path(archivo).exists(),
+      Path(archivo).name if archivo else "-")
+check("el boton vuelve a su sitio",
+      str(a.btn_rec.cget("style")) == "Rec.TButton")
 
 print("\n=== Estado del aire ===")
 check("arranca fuera del aire", not a.emisor.al_aire)

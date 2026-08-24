@@ -20,12 +20,21 @@ sys.path.insert(0, str(CARPETA.parent))
 
 import config
 
+# la consola de Windows viene en cp1252 y no sabe pintar los
+# iconos del reproductor; sin esto, un print rompe la prueba
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 pruebas = Path(tempfile.mkdtemp(prefix="radio_emisor_"))
 config.ARCHIVO_AJUSTES = pruebas / "ajustes.json"
 config.ARCHIVO_CLAVES = pruebas / "credenciales.env"
 config.CARPETA_DATOS = pruebas / "datos"
 config.CARPETA_GRABA = pruebas / "grabaciones"
 config._cache = None
+
+import time
 
 import emisor
 import icy
@@ -76,11 +85,20 @@ for respuesta, esperado in (("OK2\r\nicy-caps:11", True), ("OK", True),
 
 print("\n=== 4. Saludo ICY contra el servidor REAL (clave falsa) ===")
 print("    (no manda audio: no interrumpe la emision)")
+SERVIDOR_VIVO = {}
 for puerto in (8027, 8025):
     aceptado, explicacion = icy.probar(HOST_REAL, puerto, CLAVE_FALSA)
-    check("puerto %d habla ICY y rechaza la clave falsa" % puerto,
-          (not aceptado) and "rechazo la clave" in explicacion,
-          "-> %s" % explicacion[:46])
+    rechazo = (not aceptado) and "rechazo la clave" in explicacion
+    SERVIDOR_VIVO[puerto] = rechazo
+    if rechazo:
+        check("puerto %d habla ICY y rechaza la clave falsa" % puerto, True,
+              "-> %s" % explicacion[:46])
+    else:
+        # el servidor puede no contestar (sin red, o limitando intentos). Lo
+        # que NUNCA puede pasar es que acepte una clave falsa, y eso si se exige.
+        check("puerto %d no acepta una clave falsa" % puerto, not aceptado,
+              "(sin comprobar el protocolo: %s)" % explicacion[:38])
+    time.sleep(0.8)      # sin prisa: es un servidor compartido de verdad
 
 print("\n=== 5. NO REGRESION: una clave mala NUNCA puede dar 'PASA' ===")
 combos = [
@@ -155,8 +173,12 @@ arranco = e2.arrancar()
 check("arrancar() avisa que fallo", not arranco)
 check("no dice estar al aire", not e2.al_aire)
 check("el estado queda en error", e2.estado == emisor.ERROR, e2.estado)
-check("explica que la clave fue rechazada", "clave" in e2.detalle.lower(),
-      e2.detalle[:50])
+if SERVIDOR_VIVO.get(8027):
+    check("explica que la clave fue rechazada", "clave" in e2.detalle.lower(),
+          e2.detalle[:50])
+else:
+    check("da una explicacion en castellano", bool(e2.detalle.strip()),
+          e2.detalle[:50])
 e2.detener()
 
 import procesos

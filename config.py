@@ -78,10 +78,21 @@ DEFECTOS = {
     "ducking_salida_ms": 700,
 
     # --- carpetas de trabajo
+    # --- ecualizador del microfono
+    "eq_activo": True,
+    "eq_preset": "Voz clara",
+    "eq_valores": {"graves": -1, "medios": -3, "presencia": 4, "aire": 2,
+                   "corte_grave": True},
+    "eq_mi_gusto": {"graves": 0, "medios": 0, "presencia": 0, "aire": 0,
+                    "corte_grave": True},
+
+    # --- grabacion
+    "bitrate_grabacion": 192,
+
     "carpeta_musica": "",
     "carpeta_efectos": "",
     "cortinas": [None, None, None, None],   # los 4 botones de cortina
-    "grabar_al_aire": True,
+    "grabar_al_aire": False,    # la grabacion tiene su propio boton
 
     # --- comportamiento
     "reconectar": True,

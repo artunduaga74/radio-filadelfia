@@ -11,6 +11,13 @@ sys.path.insert(0, os.path.dirname(CARPETA))   # la app esta un nivel arriba
 import numpy as np
 import config
 
+# la consola de Windows viene en cp1252 y no sabe pintar los
+# iconos del reproductor; sin esto, un print rompe la prueba
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 pruebas = tempfile.mkdtemp(prefix="radio_pruebas_")
 config.ARCHIVO_AJUSTES = __import__("pathlib").Path(pruebas) / "ajustes.json"
 config.ARCHIVO_CLAVES = __import__("pathlib").Path(pruebas) / "credenciales.env"
@@ -113,14 +120,26 @@ m2.pista_a.reproducir()
 
 
 class MicroFalso:
+    """
+    Microfono de mentira. Da un tono de 200 Hz, no una senal continua: el
+    ecualizador lleva un corte de graves a 80 Hz que se comeria una senal
+    constante, y entonces el detector del ducking no veria nada.
+    """
+
     abierto = True
     error = ""
 
-    def __init__(self, amplitud):
+    def __init__(self, amplitud, hz=200.0, fs=48000):
         self.amplitud = amplitud
+        self.hz = hz
+        self.fs = fs
+        self.fase = 0
 
     def leer(self, n):
-        return np.full((n, 2), self.amplitud, dtype=np.float32)
+        t = (np.arange(n) + self.fase) / self.fs
+        self.fase += n
+        onda = (self.amplitud * np.sin(2 * np.pi * self.hz * t)).astype(np.float32)
+        return np.column_stack([onda, onda])
 
     def cerrar(self):
         pass
@@ -131,7 +150,7 @@ m2.micro_abierto = False
 for _ in range(30):
     m2._mezclar(1024)
 duck_sin_hablar = m2._duck
-m2.micro = MicroFalso(0.5)          # ahora "habla"
+m2.micro = MicroFalso(0.7)          # ahora "habla"
 m2.micro_abierto = True
 for _ in range(200):
     m2._mezclar(1024)

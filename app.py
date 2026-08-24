@@ -27,15 +27,23 @@ import audio
 import biblioteca
 import config
 import emisor as mod_emisor
+import eq as mod_eq
 import estilo
+import grabador as mod_grabador
 import motor
 import procesos
 import servidor
-from estilo import px
+from estilo import Consejo, px
 
 TITULO = "Voz de Filadelfia - Estudio"
 
 # como se llaman los protocolos en pantalla
+ICO_PLAY = "▶"          # play
+ICO_PAUSA = "⏸"         # pausa
+ICO_PARAR = "⏹"         # parar
+ICO_SIGUIENTE = "⏭"     # siguiente
+ICO_REC = "⏺"           # grabar
+
 PROTO_V1 = "SHOUTcast v1  (el de esta emisora)"
 PROTO_ICE = "Icecast"
 PROTOCOLOS = {"shoutcast_v1": PROTO_V1, "icecast": PROTO_ICE}
@@ -76,7 +84,9 @@ class App(tk.Tk):
         # --- piezas de audio
         self.emisor = mod_emisor.Emisor(al_cambiar=self._emisor_cambio,
                                         al_registrar=self._anotar)
-        self.mezclador = motor.Mezclador(emisor=self.emisor)
+        self.grabador = mod_grabador.Grabador(al_registrar=self._anotar)
+        self.mezclador = motor.Mezclador(emisor=self.emisor,
+                                         grabador=self.grabador)
         self.lista = biblioteca.Lista()
         self.biblio = biblioteca.Biblioteca(config.get("carpeta_musica", ""))
         self.historial = servidor.Historial()
@@ -136,6 +146,7 @@ class App(tk.Tk):
 
         self.bind("<space>", lambda e: self._atajo(self.play_pausa))
         self.bind("<F1>", lambda e: self._atajo(self.alternar_microfono))
+        self.bind("<F2>", lambda e: self._atajo(self.alternar_grabacion))
         self.bind("<Control-Right>", lambda e: self._atajo(self.siguiente_pista))
 
     def _atajo(self, funcion):
@@ -301,13 +312,26 @@ class App(tk.Tk):
 
         botones = ttk.Frame(caja, style="Caja.TFrame")
         botones.grid(row=4, column=0, sticky="ew")
-        self.btn_play = ttk.Button(botones, text="Reproducir", style="Caja.TButton",
-                                   command=self.play_pausa, width=12)
+        self.btn_play = ttk.Button(botones, text=ICO_PLAY,
+                                   style="Transporte.TButton",
+                                   command=self.play_pausa)
         self.btn_play.pack(side="left")
-        ttk.Button(botones, text="Siguiente", style="Caja.TButton",
-                   command=self.siguiente_pista).pack(side="left", padx=px(4))
-        ttk.Button(botones, text="Parar", style="Caja.TButton",
-                   command=self.parar_musica).pack(side="left")
+        Consejo(self.btn_play, "Reproducir / pausa   (barra espaciadora)")
+        b = ttk.Button(botones, text=ICO_SIGUIENTE, style="Transporte.TButton",
+                       command=self.siguiente_pista)
+        b.pack(side="left", padx=px(4))
+        Consejo(b, "Siguiente pista   (Ctrl + flecha derecha)")
+        b = ttk.Button(botones, text=ICO_PARAR, style="Transporte.TButton",
+                       command=self.parar_musica)
+        b.pack(side="left")
+        Consejo(b, "Parar la musica")
+
+        self.btn_rec = ttk.Button(botones, text="%s  Grabar" % ICO_REC,
+                                  style="Rec.TButton",
+                                  command=self.alternar_grabacion)
+        self.btn_rec.pack(side="right")
+        Consejo(self.btn_rec,
+                "Grabar el programa. Es independiente de estar al aire: puedes poner musica sin grabarla y empezar a grabar cuando arranque el programa.")
 
         # titulo manual de la transmision
         tit = ttk.Frame(caja, style="Caja.TFrame")
@@ -371,8 +395,12 @@ class App(tk.Tk):
                         command=self._cambio_ducking).pack(side="left", padx=px(10))
 
         # cortinas rapidas
+        ttk.Label(caja, text="CORTINAS   ·   clic para lanzar, clic derecho "
+                              "para asignar un archivo",
+                  style="CajaSuave.TLabel").grid(row=6, column=0, columnspan=3,
+                                                 sticky="w", pady=(px(8), px(2)))
         cort = ttk.Frame(caja, style="Caja.TFrame")
-        cort.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(px(6), 0))
+        cort.grid(row=7, column=0, columnspan=3, sticky="ew")
         self.botones_cortina = []
         for i in range(4):
             b = ttk.Button(cort, text="cortina %d" % (i + 1), style="Caja.TButton",
@@ -462,9 +490,6 @@ class App(tk.Tk):
                 self.lbl_estado_aire.configure(text="AL AIRE",
                                                foreground=estilo.ROJO)
                 self.btn_aire.configure(text="CORTAR", style="AlAire.TButton")
-                if e.grabacion:
-                    self.lbl_grabando.configure(
-                        text="grabando: %s" % Path(e.grabacion).name)
             elif e.estado == mod_emisor.CONECTANDO:
                 self.lbl_estado_aire.configure(text="conectando...",
                                                foreground=estilo.AMARILLO)
@@ -477,8 +502,8 @@ class App(tk.Tk):
                 self.lbl_estado_aire.configure(text="fuera del aire",
                                                foreground=estilo.TEXTO_SUAVE)
                 self.btn_aire.configure(text="SALIR AL AIRE", style="Salir.TButton")
-                self.lbl_grabando.configure(text="")
 
+            self._pintar_grabacion()
             self._encadenar()
             self._pintar_oyentes()
         except tk.TclError:
@@ -539,6 +564,33 @@ class App(tk.Tk):
         else:
             self.mensaje(self.emisor.detalle)
 
+    def _pintar_grabacion(self):
+        if self.grabador.grabando:
+            self.btn_rec.configure(text="%s  %s" % (ICO_REC,
+                                                    reloj(self.grabador.duracion())),
+                                   style="RecOn.TButton")
+            nombre = Path(self.grabador.archivo).name if self.grabador.archivo else ""
+            self.lbl_grabando.configure(text="grabando: %s" % nombre)
+        else:
+            self.btn_rec.configure(text="%s  Grabar" % ICO_REC, style="Rec.TButton")
+            self.lbl_grabando.configure(text="")
+
+    def alternar_grabacion(self):
+        """El boton de grabar. No tiene nada que ver con estar al aire."""
+        if self.grabador.grabando:
+            archivo = self.grabador.detener()
+            self._pintar_grabacion()
+            if archivo:
+                self.mensaje("Grabacion guardada: %s" % Path(archivo).name)
+            return
+        if not self.mezclador.corriendo:
+            self.mezclador.arrancar()
+        if self.grabador.iniciar(self.var_titulo.get().strip()):
+            self._pintar_grabacion()
+            self.mensaje("Grabando. Se guarda en la carpeta de grabaciones.")
+        else:
+            self.mensaje(self.grabador.detalle or "No se pudo grabar.")
+
     def alternar_microfono(self):
         if not self.mezclador.corriendo:
             self.mezclador.arrancar()
@@ -572,7 +624,7 @@ class App(tk.Tk):
         p = self.mezclador.pista_a
         if p.sonando:
             p.pausar()
-            self.btn_play.configure(text="Reproducir")
+            self.btn_play.configure(text=ICO_PLAY)
             self.mensaje("Musica en pausa.")
             return
         if not p.ruta:
@@ -581,7 +633,7 @@ class App(tk.Tk):
         if not self.mezclador.corriendo:
             self.mezclador.arrancar()
         p.reproducir()
-        self.btn_play.configure(text="Pausa")
+        self.btn_play.configure(text=ICO_PAUSA)
 
     def siguiente_pista(self):
         pista = self.lista.siguiente()
@@ -602,7 +654,7 @@ class App(tk.Tk):
         p.cargar(pista["ruta"], biblioteca.etiqueta(pista),
                  float(pista.get("duracion", 0) or 0))
         p.reproducir(fundido_ms=300)
-        self.btn_play.configure(text="Pausa")
+        self.btn_play.configure(text=ICO_PAUSA)
         self.lbl_pista.configure(text=pista.get("titulo", "")[:42] or "-")
         self.lbl_artista.configure(text=pista.get("artista", ""))
         self._marcar_sonando()
@@ -615,7 +667,7 @@ class App(tk.Tk):
 
     def parar_musica(self):
         self.mezclador.pista_a.detener(fundido_ms=400)
-        self.btn_play.configure(text="Reproducir")
+        self.btn_play.configure(text=ICO_PLAY)
         self.mensaje("Musica detenida.")
 
     def disparar_cortina(self, n):
@@ -894,6 +946,7 @@ class App(tk.Tk):
             "Atajos",
             "Barra espaciadora .... reproducir / pausa\n"
             "F1 ................... abrir / cerrar el microfono\n"
+            "F2 ................... empezar / parar la grabacion\n"
             "Ctrl + flecha der .... siguiente pista\n"
             "Doble clic en la lista  reproducir esa pista\n"
             "Clic derecho en una cortina  asignarle un archivo",
@@ -908,6 +961,8 @@ class App(tk.Tk):
                     "ESTAS AL AIRE.\n\nSi cierras, se corta la transmision.\n\n"
                     "Seguro que quieres salir?", parent=self):
                 return
+        if self.grabador.grabando:
+            self.grabador.detener()
         try:
             self.vigilante.detener()
             self.emisor.detener()
@@ -937,6 +992,7 @@ class DialogoConfig(tk.Toplevel):
         self.vars = {}
         self._pestana_servidor(nb)
         self._pestana_audio(nb)
+        self._pestana_microfono(nb)
         self._pestana_carpetas(nb)
 
         pie = ttk.Frame(self, padding=(px(10), 0, px(10), px(10)))
@@ -1078,6 +1134,126 @@ class DialogoConfig(tk.Toplevel):
                                                    sticky="ew", pady=px(8))
         ttk.Label(f, text="Cambiar de microfono exige volver a salir al aire.",
                   style="Suave.TLabel").grid(row=7, column=0, columnspan=2, sticky="w")
+
+    def _pestana_microfono(self, nb):
+        """Ecualizador de la voz: ajustes de fabrica y uno a su gusto."""
+        f = ttk.Frame(nb, padding=px(12))
+        nb.add(f, text="Microfono")
+        f.columnconfigure(1, weight=1)
+
+        self.var_eq_activo = tk.BooleanVar(value=bool(config.get("eq_activo", True)))
+        ttk.Checkbutton(f, text="Ecualizador de voz encendido",
+                        variable=self.var_eq_activo,
+                        command=self._refrescar_eq).grid(
+            row=0, column=0, columnspan=3, sticky="w")
+
+        ttk.Label(f, text="Ajuste:").grid(row=1, column=0, sticky="w", pady=px(6))
+        self.var_eq_preset = tk.StringVar(value=config.get("eq_preset", "Plano"))
+        cb = ttk.Combobox(f, textvariable=self.var_eq_preset, state="readonly",
+                          width=22, values=mod_eq.ORDEN_PRESETS)
+        cb.grid(row=1, column=1, sticky="w", pady=px(6))
+        cb.bind("<<ComboboxSelected>>", lambda e: self._cargar_preset_eq())
+
+        valores = dict(mod_eq.PRESETS["Plano"])
+        valores.update(config.get("eq_valores") or {})
+        self.vars_eq, self.lbls_eq = {}, {}
+        fila = 2
+        for clave, etiqueta, frec, _, _ in mod_eq.BANDAS:
+            hz = "%d Hz" % frec if frec < 1000 else "%.0f kHz" % (frec / 1000.0)
+            ttk.Label(f, text="%s  (%s)" % (etiqueta, hz)).grid(
+                row=fila, column=0, sticky="w", pady=px(2))
+            var = tk.DoubleVar(value=float(valores.get(clave, 0)))
+            ttk.Scale(f, from_=-mod_eq.LIMITE_DB, to=mod_eq.LIMITE_DB,
+                      variable=var, length=px(210),
+                      command=lambda v, c=clave: self._mover_eq(c)).grid(
+                row=fila, column=1, sticky="w")
+            lbl = ttk.Label(f, text="", width=6, style="Suave.TLabel")
+            lbl.grid(row=fila, column=2, sticky="w")
+            self.vars_eq[clave] = var
+            self.lbls_eq[clave] = lbl
+            fila += 1
+
+        self.var_corte = tk.BooleanVar(value=bool(valores.get("corte_grave", True)))
+        ttk.Checkbutton(f, text="Quitar el retumbe grave (golpes de mesa, aire)",
+                        variable=self.var_corte,
+                        command=self._refrescar_eq).grid(
+            row=fila, column=0, columnspan=3, sticky="w", pady=px(6))
+        fila += 1
+
+        self.curva = estilo.CurvaEQ(f, ancho=px(320), alto=px(96))
+        self.curva.grid(row=fila, column=0, columnspan=3, sticky="ew", pady=px(4))
+        fila += 1
+
+        acciones = ttk.Frame(f)
+        acciones.grid(row=fila, column=0, columnspan=3, sticky="ew", pady=px(6))
+        ttk.Button(acciones, text="Guardar como 'A mi gusto'",
+                   command=self._guardar_mi_gusto).pack(side="left")
+        ttk.Button(acciones, text="Escuchar el microfono",
+                   command=self._escuchar_micro).pack(side="left", padx=px(6))
+        fila += 1
+
+        ttk.Label(f, text="Consejo: enciende el monitor, abre el microfono y mueve las bandas mientras hablas.",
+                  style="Suave.TLabel", justify="left").grid(
+            row=fila, column=0, columnspan=3, sticky="w")
+        self._refrescar_eq()
+
+    def _valores_eq(self):
+        v = {c: round(float(var.get()), 1) for c, var in self.vars_eq.items()}
+        v["corte_grave"] = bool(self.var_corte.get())
+        return v
+
+    def _mover_eq(self, clave):
+        """Al mover una banda deja de ser un ajuste de fabrica."""
+        if self.var_eq_preset.get() != "A mi gusto":
+            self.var_eq_preset.set("A mi gusto")
+        self._refrescar_eq()
+
+    def _cargar_preset_eq(self):
+        nombre = self.var_eq_preset.get()
+        base = (config.get("eq_mi_gusto") if nombre == "A mi gusto"
+                else mod_eq.PRESETS.get(nombre)) or {}
+        for clave, var in self.vars_eq.items():
+            var.set(float(base.get(clave, 0)))
+        self.var_corte.set(bool(base.get("corte_grave", True)))
+        self._refrescar_eq()
+
+    def _refrescar_eq(self):
+        """Reetiqueta, redibuja la curva y lo aplica en vivo al microfono."""
+        valores = self._valores_eq()
+        for clave, lbl in self.lbls_eq.items():
+            lbl.configure(text="%+.0f dB" % valores.get(clave, 0))
+        try:
+            self.curva.pintar(mod_eq.respuesta(
+                valores, int(config.get("muestreo", 48000))))
+        except Exception:
+            pass
+        config.guardar({"eq_activo": self.var_eq_activo.get(),
+                        "eq_preset": self.var_eq_preset.get(),
+                        "eq_valores": valores})
+        self.padre.mezclador.aplicar_ajustes()
+
+    def _guardar_mi_gusto(self):
+        config.guardar({"eq_mi_gusto": self._valores_eq(),
+                        "eq_preset": "A mi gusto"})
+        self.var_eq_preset.set("A mi gusto")
+        self._refrescar_eq()
+        messagebox.showinfo("Microfono",
+                            "Guardado como 'A mi gusto'.", parent=self)
+
+    def _escuchar_micro(self):
+        """Abre el microfono con el monitor para oirse mientras se ajusta."""
+        m = self.padre.mezclador
+        if not m.corriendo:
+            m.arrancar()
+        if not m.micro.abierto:
+            messagebox.showwarning("Microfono", m.micro.error or
+                                   "No se pudo abrir el microfono.", parent=self)
+            return
+        m.micro_abierto = True
+        self.padre.btn_micro.configure(text="MICROFONO ABIERTO", style="MicOn.TButton")
+        messagebox.showinfo("Microfono",
+                            "Microfono abierto. Habla y mueve las bandas.",
+                            parent=self)
 
     def _pestana_carpetas(self, nb):
         f = ttk.Frame(nb, padding=px(12))

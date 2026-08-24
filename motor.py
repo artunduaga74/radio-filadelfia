@@ -24,6 +24,7 @@ import sounddevice as sd
 
 import audio
 import config
+import eq as mod_eq
 
 CANALES = 2
 BLOQUE = 1024
@@ -31,8 +32,9 @@ BLOQUE = 1024
 
 class Mezclador:
 
-    def __init__(self, emisor=None, al_medir=None):
+    def __init__(self, emisor=None, al_medir=None, grabador=None):
         self.emisor = emisor
+        self.grabador = grabador
         self.al_medir = al_medir          # funcion(niveles) para los vumetros
         self.muestreo = int(config.get("muestreo", 48000))
 
@@ -42,6 +44,12 @@ class Mezclador:
         self.pista_b = audio.Pista(self.muestreo, BLOQUE)
         self.efectos = []                 # pistas de un solo uso (jingles)
 
+        # ecualizador de la voz (ver eq.py)
+        self.eq = mod_eq.Ecualizador(self.muestreo,
+                                     activo=bool(config.get("eq_activo", True)))
+        self.eq.cargar(config.get("eq_valores") or {},
+                       config.get("eq_preset", "Plano"))
+
         self.micro_abierto = False
         self.vol_micro = float(config.get("vol_micro", 0.9))
         self.vol_musica = float(config.get("vol_musica", 0.8))
@@ -50,6 +58,9 @@ class Mezclador:
         self.monitor_activo = bool(config.get("monitor_activo", True))
 
         self.ducking = bool(config.get("ducking", True))
+        self.eq.activo = bool(config.get("eq_activo", True))
+        self.eq.cargar(config.get("eq_valores") or {},
+                       config.get("eq_preset", "Plano"))
         self._duck = 1.0                  # factor actual (1 = sin bajar)
 
         self.niveles = {"micro": -60.0, "musica": -60.0, "efectos": -60.0,
@@ -143,6 +154,8 @@ class Mezclador:
 
             if self.emisor is not None:
                 self.emisor.enviar(bloque)
+            if self.grabador is not None:
+                self.grabador.recibir(bloque)
 
             if self._salida is not None:
                 try:
@@ -170,7 +183,10 @@ class Mezclador:
     def _mezclar(self, cuadros):
         # --- microfono
         if self.micro_abierto and self.micro.abierto:
-            mic = self.micro.leer(cuadros) * self.vol_micro
+            mic = self.micro.leer(cuadros)
+            if not self.eq.plano:
+                mic = self.eq.procesar(mic)
+            mic = mic * self.vol_micro
         else:
             mic = np.zeros((cuadros, CANALES), dtype=np.float32)
 
@@ -237,3 +253,6 @@ class Mezclador:
         self.vol_efectos = float(config.get("vol_efectos", 0.85))
         self.vol_monitor = float(config.get("volumen_monitor", 0.8))
         self.ducking = bool(config.get("ducking", True))
+        self.eq.activo = bool(config.get("eq_activo", True))
+        self.eq.cargar(config.get("eq_valores") or {},
+                       config.get("eq_preset", "Plano"))

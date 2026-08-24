@@ -144,6 +144,24 @@ def aplicar(root):
                  font=FUENTE_TIT, padding=(px(12), px(7)), relief="flat")
     st.map("MicOff.TButton", background=[("active", "#2f3946")])
 
+    # --- transporte: iconos grandes (play, pausa, parar, siguiente)
+    st.configure("Transporte.TButton", background=PANEL_ALTO, foreground=TEXTO,
+                 font=("Segoe UI Symbol", 15), padding=(px(14), px(4)),
+                 relief="flat", bordercolor=BORDE)
+    st.map("Transporte.TButton",
+           background=[("active", "#2f3946"), ("pressed", ACENTO_OSC)],
+           foreground=[("pressed", "#12161c")])
+
+    # --- grabacion: apagado discreto, encendido en rojo
+    st.configure("Rec.TButton", background=PANEL_ALTO, foreground=TEXTO_SUAVE,
+                 font=("Segoe UI Symbol", 12), padding=(px(10), px(4)),
+                 relief="flat")
+    st.map("Rec.TButton", background=[("active", "#2f3946")])
+    st.configure("RecOn.TButton", background=ROJO, foreground="#fff4f3",
+                 font=("Segoe UI Symbol", 12), padding=(px(10), px(4)),
+                 relief="flat")
+    st.map("RecOn.TButton", background=[("active", "#f05548")])
+
     st.configure("Accion.TButton", background=AZUL, foreground="#f2fbfe",
                  font=FUENTE_TIT, padding=(px(12), px(6)))
     st.map("Accion.TButton",
@@ -223,6 +241,63 @@ def aplicar(root):
         root.option_add("*%s.borderWidth" % clase, 0)
     root.option_add("*Text.insertBackground", ACENTO)
     return st
+
+
+# ------------------------------------------------------------------ ayuda
+
+class Consejo:
+    """
+    Globo de ayuda al dejar el raton encima. Con botones de icono es
+    imprescindible: si no, nadie sabe que hace cada dibujo.
+    """
+
+    ESPERA = 500      # ms antes de aparecer
+
+    def __init__(self, widget, texto):
+        self.widget = widget
+        self.texto = texto
+        self.ventana = None
+        self._cita = None
+        widget.bind("<Enter>", self._entrar, add="+")
+        widget.bind("<Leave>", self._salir, add="+")
+        widget.bind("<ButtonPress>", self._salir, add="+")
+
+    def _entrar(self, _=None):
+        self._cancelar()
+        self._cita = self.widget.after(self.ESPERA, self._mostrar)
+
+    def _salir(self, _=None):
+        self._cancelar()
+        v, self.ventana = self.ventana, None
+        if v:
+            try:
+                v.destroy()
+            except tk.TclError:
+                pass
+
+    def _cancelar(self):
+        if self._cita:
+            try:
+                self.widget.after_cancel(self._cita)
+            except Exception:
+                pass
+            self._cita = None
+
+    def _mostrar(self):
+        if self.ventana or not self.texto:
+            return
+        try:
+            x = self.widget.winfo_rootx() + px(12)
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + px(4)
+        except tk.TclError:
+            return
+        self.ventana = tk.Toplevel(self.widget)
+        self.ventana.wm_overrideredirect(True)
+        self.ventana.wm_geometry("+%d+%d" % (x, y))
+        tk.Label(self.ventana, text=self.texto, justify="left",
+                 background=PANEL_ALTO, foreground=TEXTO,
+                 relief="solid", borderwidth=1, font=FUENTE,
+                 padx=px(8), pady=px(5)).pack()
 
 
 # ------------------------------------------------------------------ vumetro
@@ -340,3 +415,57 @@ class Grafico(tk.Canvas):
         self.create_text(self.ancho - margen - px(2), margen + px(6),
                          text="max %d" % tope, fill=TEXTO_SUAVE, anchor="e",
                          font=("Segoe UI", 8))
+
+
+class CurvaEQ(tk.Canvas):
+    """Dibuja la curva del ecualizador: se ve de un vistazo que se esta tocando."""
+
+    def __init__(self, padre, ancho=px(300), alto=px(96), **kw):
+        super().__init__(padre, width=ancho, height=alto, bg=PANEL_HUND,
+                         highlightthickness=0, bd=0, **kw)
+        self.ancho, self.alto = ancho, alto
+        self.puntos = []
+        self.bind("<Configure>", self._medir)
+
+    def _medir(self, e):
+        self.ancho, self.alto = e.width, e.height
+        self.pintar(self.puntos)
+
+    def pintar(self, puntos):
+        """puntos = [(hz, dB)] tal cual los da eq.respuesta()."""
+        self.puntos = list(puntos or [])
+        self.delete("all")
+        margen = px(6)
+        util_a = max(1, self.ancho - margen * 2)
+        util_h = max(1, self.alto - margen * 2)
+        tope = 15.0
+
+        def y_de(db):
+            return margen + util_h * (0.5 - max(-tope, min(tope, db)) / (2 * tope))
+
+        for db in (12, 6, 0, -6, -12):          # rejilla
+            y = y_de(db)
+            color = BORDE if db == 0 else "#1c242e"
+            self.create_line(margen, y, self.ancho - margen, y, fill=color)
+            if db in (12, 0, -12):
+                self.create_text(margen + px(2), y - px(6),
+                                 text="%+d" % db if db else "0", anchor="w",
+                                 fill=TEXTO_SUAVE, font=("Segoe UI", 7))
+        for hz, etiqueta in ((100, "100"), (1000, "1k"), (10000, "10k")):
+            import math
+            frac = (math.log10(hz) - math.log10(40)) / (math.log10(16000) - math.log10(40))
+            x = margen + util_a * frac
+            self.create_line(x, margen, x, self.alto - margen, fill="#1c242e")
+            self.create_text(x, self.alto - margen - px(1), text=etiqueta,
+                             anchor="s", fill=TEXTO_SUAVE, font=("Segoe UI", 7))
+
+        if not self.puntos:
+            return
+        import math
+        linea = []
+        for hz, db in self.puntos:
+            frac = (math.log10(max(40.0, hz)) - math.log10(40)) / (
+                math.log10(16000) - math.log10(40))
+            linea += [margen + util_a * frac, y_de(db)]
+        if len(linea) >= 4:
+            self.create_line(linea, fill=ACENTO, width=px(2), smooth=True)

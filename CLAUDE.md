@@ -102,7 +102,9 @@ config.py          ajustes PORTABLES (junto a la app) + credenciales aparte
 estilo.py          tema, px() para DPI, Vumetro y Grafico propios
 procesos.py        job object de Windows: ningún ffmpeg sobrevive a la app
 prueba_conexion.py busca solo el puerto y la forma de clave correctos
-pruebas/           100 comprobaciones automáticas
+eq.py              ecualizador de voz (biquads + scipy), con ajustes de fábrica
+grabador.py        grabación a disco con su propio botón, aparte de la emisión
+pruebas/           148 comprobaciones automáticas
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -147,8 +149,8 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
 ## 6. Estado y qué sigue
 
 **Hecho y probado (2026-08-24):** los 11 módulos, **94 comprobaciones en
-verde** (28 del motor midiendo audio real, 33 de la ventana, 39 del emisor y el
-protocolo ICY contra el servidor real). El monitoreo de oyentes, verificado.
+verde** (28 del motor, 39 del emisor/ICY, 34 del ecualizador y el grabador, 47 de la
+ventana). Todo lo de audio se mide: dB reales, no "parece que suena".
 
 **⛔ GATE PENDIENTE — lo único que falta para darlo por bueno:** el usuario debe
 correr `python prueba_conexion.py` con su usuario y clave de DJ. **Nunca se ha
@@ -160,6 +162,7 @@ gate pase, no dar por funcionando la emisión.
 - Programación por horarios (parrilla) — ojo: el 24/7 conviene dejarlo en el
   servidor; la app solo toma el aire en vivo.
 - Cartwall más grande que 4 cortinas.
+- Compresor de voz (el ecualizador ya está; falta el control de dinámica).
 - Procesado tipo radio (compresor multibanda). Con `loudnorm`/`compand` se
   llega al 70-80 %; al 100 % no (eso es Stereo Tool/Omnia).
 - Integrar los MP3 que genera la skill `audio-emisora`.
@@ -167,6 +170,40 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **✅ GATE SUPERADO: la emisora salió al aire de verdad.** El
+  usuario confirmó que funciona con puerto 8024 (→8025), SHOUTcast v1, cuenta
+  de DJ. Tras eso pidió cuatro cosas, todas hechas:
+  **(1) Botón de grabar** (`grabador.py`): la grabación era una segunda salida
+  del ffmpeg que emitía, así que empezaba y acababa con la transmisión — obliga
+  a grabar la música de relleno previa. Ahora es un proceso aparte alimentado
+  por el mezclador: se puede estar al aire sin grabar, grabar sin estar al aire
+  y parar la grabación siguiendo al aire. Atajo F2. Verificado abriendo el MP3
+  con ffprobe (duración real y que no sea silencio).
+  **(2) Ecualizador de voz** (`eq.py`): 4 bandas (100 Hz, 400 Hz, 3 kHz, 9 kHz)
+  con biquads del recetario RBJ + corte de graves a 80 Hz, filtrado con
+  `scipy.sosfilt` guardando el estado entre bloques. Cinco ajustes de fábrica
+  más "A mi gusto". Pestaña propia con curva dibujada. Medido: subir presencia
+  +6 dB da +6.0 dB exactos a 3 kHz, el corte grave da −3.0 dB justo en 80 Hz, y
+  procesar por bloques es **idéntico** a procesar de golpe (0.0e+00) → sin
+  chasquidos.
+  **(3) Botones de transporte con iconos grandes** (▶ ⏸ ⏹ ⏭ ⏺, Segoe UI
+  Symbol) + globos de ayuda (`estilo.Consejo`), porque un icono sin explicación
+  no se entiende.
+  **(4) Rótulo en las cortinas** diciendo para qué son.
+  ⚠️ **Hallazgo del servidor:** con el autoDJ APAGADO, los puertos 8026/8027
+  **se cierran** y la emisora queda fuera del aire cuando él no transmite.
+  Es el argumento de peso para volver a encender el autoDJ y emitir por el 8026.
+  ⚠️ **Aclaración importante:** el silencio NO devuelve el aire al autoDJ; solo
+  lo hace una desconexión real. La app manda datos continuamente (silencio
+  incluido), así que un silencio en el programa no la echa.
+  **Lección de método:** parchear con scripts que llevan `
+` dentro de cadenas
+  **falla en silencio** en este entorno (se convierte en salto real). Tres
+  inserciones se perdieron sin avisar y el contador de pruebas lo delató. Usar
+  siempre coincidencia por líneas y comprobar el número de comprobaciones.
+  148 comprobaciones en verde. — Estado: ✅ al aire y grabando — Siguiente:
+  decisión autoDJ sí/no; compresor de voz si lo pide.
 
 - [2026-08-24] **El protocolo era ICY, no Icecast. Falso positivo corregido.**
   El usuario reportó que "Probar conexión" decía que todo bien pero al aire no
