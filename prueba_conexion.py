@@ -91,7 +91,10 @@ def main():
     # --- 3. buscar la combinacion buena
     print()
     print("[3/3] Probando combinaciones. Solo el saludo, es instantaneo.")
-    print("      8027 = el autoDJ (lo normal)   ·   8025 = el servidor directo")
+    print("      Se prueban los puertos internos: en SHOUTcast v1 el numero")
+    print("      del panel es el de los oyentes y la fuente va en el +1.")
+    print("        8025 = el que sale del 8024 del panel (sin autoDJ)")
+    print("        8027 = el que sale del 8026 del panel (con autoDJ)")
     print()
 
     ganadora = None
@@ -126,12 +129,17 @@ def main():
         return 1
 
     puerto, valor, etiqueta = ganadora
+    puerto_panel = puerto - 1          # lo que se escribe en la aplicacion
     print("  LISTO. Esta es la configuracion buena:")
-    print("     Puerto ....... %d" % puerto)
-    print("     Protocolo .... SHOUTcast v1 (ICY)")
+    print("     Puerto ....... %d   (el de siempre; por dentro usa el %d)"
+          % (puerto_panel, puerto))
+    print("     Protocolo .... SHOUTcast v1")
     print("     Clave ........ %s" % etiqueta)
-    config.guardar({"puerto": puerto, "usuario": usuario,
-                    "protocolo": "shoutcast_v1",
+    print("     %s" % ("(sale al aire por el autoDJ: al colgar, vuelve solo)"
+                       if puerto == 8027 else
+                       "(sale directo al servidor, sin pasar por el autoDJ)"))
+    config.guardar({"puerto": puerto_panel, "usuario": usuario,
+                    "protocolo": "shoutcast_v1", "sumar_uno_v1": True,
                     "clave_con_usuario": etiqueta == "usuario:clave"})
     config.guardar_clave("clave_fuente", clave)
     print()
@@ -144,7 +152,8 @@ def main():
     print("Si estas escuchando la emisora, deberias oir un pitido.")
     antes = servidor.estado()
     ok, msg = emisor.probar_conexion(host, puerto, usuario, clave,
-                                     protocolo="shoutcast_v1", segundos=8)
+                                     protocolo="shoutcast_v1", segundos=8,
+                                     sumar_uno=False)
     if not ok:
         print("  X  %s" % msg)
         return 1

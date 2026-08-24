@@ -24,7 +24,19 @@ Host: `cast1.asurahosting.com` · cuenta `nonefern`
 | 8024 | DNAS **2.6.1.777** — oyentes. 128 kbps, **44100 Hz**, tope 120 |
 | 8025 | fuente v1 del DNAS (sin autoDJ) |
 | 8026 | `Liquidsoap source harbor` — el autoDJ, por HTTP (pero **sin montaje válido**) |
-| **8027** | **el mismo harbor hablando ICY (SHOUTcast v1)** — *este es el bueno* |
+| **8027** | el mismo harbor hablando ICY — sale al aire **a través del autoDJ** |
+
+**La regla del +1 (importante).** En SHOUTcast v1 el número que muestran los
+paneles —y el que se escribe en BUTT, SAM o RadioBOSS— es el de los **oyentes**;
+el codificador le suma 1 para hablar con la fuente. Por eso una captura de un
+broadcaster que funciona pone `8024` aunque por dentro conecte al `8025`. La
+aplicación hace lo mismo (`emisor.puerto_fuente`, opción `sumar_uno_v1`), para
+que se escriba **exactamente lo que dice el panel**.
+
+| Se escribe | Conecta a | Camino |
+|---|---|---|
+| **8024** | 8025 | directo al DNAS, sin pasar por el autoDJ |
+| 8026 | 8027 | por el autoDJ (al colgar, la programación vuelve sola) |
 
 `cast1.my-control-panel.com` es **el mismo servidor** (misma IP, 65.108.105.26).
 En esa máquina hay más puertos abiertos (8020, 8021, 8028, 8031): son de **otros
@@ -90,7 +102,7 @@ config.py          ajustes PORTABLES (junto a la app) + credenciales aparte
 estilo.py          tema, px() para DPI, Vumetro y Grafico propios
 procesos.py        job object de Windows: ningún ffmpeg sobrevive a la app
 prueba_conexion.py busca solo el puerto y la forma de clave correctos
-pruebas/           94 comprobaciones automáticas
+pruebas/           100 comprobaciones automáticas
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -135,7 +147,7 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
 ## 6. Estado y qué sigue
 
 **Hecho y probado (2026-08-24):** los 11 módulos, **94 comprobaciones en
-verde** (28 del motor midiendo audio real, 33 de la ventana, 33 del emisor y el
+verde** (28 del motor midiendo audio real, 33 de la ventana, 39 del emisor y el
 protocolo ICY contra el servidor real). El monitoreo de oyentes, verificado.
 
 **⛔ GATE PENDIENTE — lo único que falta para darlo por bueno:** el usuario debe
@@ -175,6 +187,15 @@ gate pase, no dar por funcionando la emisión.
   33 nuevas de emisor/ICY, estas contra el servidor real con clave falsa, sin
   interrumpir la emisión). — Estado: 🔄 sigue faltando el gate real (hace falta
   la clave verdadera) — Siguiente: `python prueba_conexion.py`.
+- [2026-08-24] **La regla del +1.** El usuario mandó la captura de un
+  broadcaster que SÍ conecta: pone puerto **8024** con "Shoutcast 1". Eso
+  confirmó que el número del panel es el de oyentes y que el codificador suma 1
+  (por eso el 8025 respondía al saludo ICY). La aplicación pedía el puerto ya
+  sumado, que no es como funciona ningún otro programa: ahora se escribe el
+  del panel y `emisor.puerto_fuente()` hace la suma, con la pista en pantalla.
+  Una prueba nueva detectó de paso que apuntar al 8027 "a pelo" acababa en el
+  8028, **que es de otro cliente del hosting compartido**. 100 comprobaciones
+  en verde. — Estado: 🔄 falta la clave real — Siguiente: el gate.
 
 - [2026-08-23] **Proyecto creado, código completo y probado.** Estudio de
   factibilidad → investigación del servidor midiendo puertos (ver §2) → 10

@@ -63,6 +63,27 @@ def limpiar_host(texto):
     return t.strip()
 
 
+def puerto_fuente(puerto=None, protocolo=None, sumar_uno=None):
+    """
+    El puerto TCP al que hay que conectarse de verdad.
+
+    En SHOUTcast v1 el numero que dan los paneles (y el que se escribe en BUTT,
+    SAM o RadioBOSS) es el de los OYENTES: el codificador le suma 1 para hablar
+    con la fuente. Aqui se hace lo mismo, para que lo que se escribe en la
+    aplicacion sea exactamente lo que dice el panel.
+
+        8024 (panel, sin autoDJ) -> 8025
+        8026 (panel, con autoDJ) -> 8027
+    """
+    puerto = int(puerto if puerto is not None else config.get("puerto", 8024))
+    protocolo = protocolo or config.get("protocolo", "shoutcast_v1")
+    if sumar_uno is None:
+        sumar_uno = config.get("sumar_uno_v1", True)
+    if protocolo == "shoutcast_v1" and sumar_uno:
+        return puerto + 1
+    return puerto
+
+
 def url_destino(host=None, puerto=None, mount=None, usuario=None, clave=None):
     """URL de fuente para el protocolo Icecast (ffmpeg habla directo)."""
     host = limpiar_host(host if host is not None else config.get("host", ""))
@@ -187,8 +208,10 @@ class Emisor:
 
             por_icy = aj.get("protocolo") == "shoutcast_v1"
             self._poner(CONECTANDO, "")
+            puerto_real = puerto_fuente(aj.get("puerto"),
+                                        aj.get("protocolo"))
             self._log("Conectando a %s:%s (%s)"
-                      % (host, aj.get("puerto"),
+                      % (host, puerto_real,
                          "SHOUTcast v1" if por_icy else "Icecast"))
 
             # --- 1. si es ICY, el saludo va PRIMERO: si la clave esta mal lo
@@ -196,7 +219,8 @@ class Emisor:
             if por_icy:
                 try:
                     self._sock = icy.conectar(
-                        host, aj.get("puerto"), self._clave_icy(),
+                        host, puerto_fuente(aj.get("puerto"), "shoutcast_v1"),
+                        self._clave_icy(),
                         nombre=aj.get("nombre_emisora"), genero=aj.get("genero"),
                         url=aj.get("url_emisora"),
                         bitrate=int(aj.get("bitrate", 128)))
@@ -395,7 +419,7 @@ class Emisor:
 
 def probar_conexion(host, puerto, usuario, clave, mount="/stream",
                     protocolo="shoutcast_v1", legacy=False, segundos=5,
-                    codec="mp3", bitrate=128, con_audio=True):
+                    codec="mp3", bitrate=128, con_audio=True, sumar_uno=None):
     """
     Comprueba de verdad que el servidor nos acepta como fuente.
     Devuelve (ok, mensaje).
@@ -409,6 +433,7 @@ def probar_conexion(host, puerto, usuario, clave, mount="/stream",
     host = limpiar_host(host)
     if not host:
         return False, "Falta el nombre del servidor"
+    puerto = puerto_fuente(puerto, protocolo, sumar_uno)
 
     if protocolo == "shoutcast_v1":
         return _probar_icy(host, puerto, usuario, clave, segundos, bitrate,

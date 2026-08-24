@@ -87,7 +87,7 @@ combos = [
     ("host con la ruta del panel (el fallo original)",
      "http://cast1.asurahosting.com/start/nonefern", 8024, "shoutcast_v1"),
     ("host limpio, puerto de oyentes", HOST_REAL, 8024, "shoutcast_v1"),
-    ("host limpio, puerto del autoDJ", HOST_REAL, 8027, "shoutcast_v1"),
+    ("host limpio, puerto 8026 del panel", HOST_REAL, 8026, "shoutcast_v1"),
     ("protocolo Icecast, host con ruta",
      "http://cast1.asurahosting.com/start/nonefern", 8026, "icecast"),
 ]
@@ -96,6 +96,26 @@ for nombre, host, puerto, proto in combos:
                                            CLAVE_FALSA, "/stream",
                                            protocolo=proto, segundos=2)
     check("rechaza: %s" % nombre, not aceptado, "-> %s" % msg.splitlines()[0][:48])
+
+print("")
+print("=== 5b. El puerto que se escribe es el DEL PANEL (+1 por dentro) ===")
+check("8024 del panel -> 8025 real",
+      emisor.puerto_fuente(8024, "shoutcast_v1") == 8025)
+check("8026 del panel -> 8027 real",
+      emisor.puerto_fuente(8026, "shoutcast_v1") == 8027)
+check("con Icecast no se suma nada",
+      emisor.puerto_fuente(8000, "icecast") == 8000)
+check("se puede desactivar la suma",
+      emisor.puerto_fuente(8024, "shoutcast_v1", sumar_uno=False) == 8024)
+config.guardar({"puerto": 8024, "protocolo": "shoutcast_v1",
+                "sumar_uno_v1": True})
+check("lo toma de la configuracion si no se le pasa nada",
+      emisor.puerto_fuente() == 8025, str(emisor.puerto_fuente()))
+aceptado, msg = emisor.probar_conexion(HOST_REAL, 8024, "usuariofalso",
+                                       CLAVE_FALSA, protocolo="shoutcast_v1",
+                                       segundos=2)
+check("escribir 8024 llega a la fuente y la rechaza por clave",
+      (not aceptado) and "rechazo la clave" in msg, "-> %s" % msg[:44])
 
 print("\n=== 6. Comando de ffmpeg para SHOUTcast v1 ===")
 config.guardar({"protocolo": "shoutcast_v1", "bitrate": 128,
@@ -124,7 +144,9 @@ check("respeta la clave que ya trae dos puntos",
       e._clave_icy() == "otro:yaviene", e._clave_icy())
 
 print("\n=== 8. Si el servidor no acepta, NO se queda 'al aire' ===")
-config.guardar({"host": HOST_REAL, "puerto": 8027, "protocolo": "shoutcast_v1",
+# 8026 es el numero DEL PANEL: con la regla del +1 acaba en el 8027, que es
+# el nuestro. Poner 8027 aqui llevaria al 8028, que es de otro cliente.
+config.guardar({"host": HOST_REAL, "puerto": 8026, "protocolo": "shoutcast_v1",
                 "usuario": "usuariofalso", "reconectar": False,
                 "grabar_al_aire": False})
 config.guardar_clave("clave_fuente", CLAVE_FALSA)

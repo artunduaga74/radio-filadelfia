@@ -981,9 +981,12 @@ class DialogoConfig(tk.Toplevel):
                      values=(PROTO_V1, PROTO_ICE)).grid(row=2, column=1, sticky="w",
                                                         pady=px(3))
 
-        self._campo(f, 3, "Puerto de la fuente:", "puerto", 10)
-        ttk.Label(f, text="el que muestra Centova MAS UNO   (8026 -> 8027)",
-                  style="Suave.TLabel").grid(row=4, column=1, sticky="w")
+        self._campo(f, 3, "Puerto:", "puerto", 10)
+        self.lbl_puerto = ttk.Label(f, text="", style="Suave.TLabel")
+        self.lbl_puerto.grid(row=4, column=1, sticky="w")
+        self.vars["puerto"].trace_add("write", lambda *a: self._pista_puerto())
+        self.var_proto.trace_add("write", lambda *a: self._pista_puerto())
+        self._pista_puerto()
 
         self._campo(f, 5, "Usuario DJ:", "usuario", 20)
         ttk.Label(f, text="Clave DJ:").grid(row=6, column=0, sticky="w", pady=px(3))
@@ -1021,6 +1024,20 @@ class DialogoConfig(tk.Toplevel):
         ttk.Label(f, text="El plan contratado admite 128 kbps y 120 oyentes.",
                   style="Suave.TLabel").grid(row=17, column=0, columnspan=2,
                                              sticky="w", pady=(px(6), 0))
+
+    def _pista_puerto(self):
+        """Explica en vivo a que puerto se conectara de verdad."""
+        try:
+            puerto = int(self.vars["puerto"].get().strip())
+        except (ValueError, KeyError):
+            self.lbl_puerto.configure(text="el mismo que pone el panel")
+            return
+        if self.var_proto.get() == PROTO_V1:
+            texto = ("el mismo que pone el panel (y que usan BUTT o RadioBOSS); "
+                     "por dentro se conecta al %d" % (puerto + 1))
+        else:
+            texto = "se conecta directamente al %d" % puerto
+        self.lbl_puerto.configure(text=texto)
 
     def _pestana_audio(self, nb):
         f = ttk.Frame(nb, padding=px(12))

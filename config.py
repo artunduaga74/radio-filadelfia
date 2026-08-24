@@ -36,9 +36,11 @@ CARPETA_GRABA = BASE / "grabaciones"
 DEFECTOS = {
     # --- servidor de streaming
     "host": "",
-    # El harbor del autoDJ escucha ICY en 8027: Centova muestra 8026 y los
-    # codificadores de SHOUTcast v1 le suman 1. Comprobado contra el servidor.
-    "puerto": 8027,
+    # Se escribe el MISMO puerto que muestra el panel (y que se pone en
+    # cualquier otro programa: BUTT, SAM, RadioBOSS...). Con SHOUTcast v1 la
+    # conexion real va a puerto+1, y de eso se encarga la aplicacion.
+    "puerto": 8024,
+    "sumar_uno_v1": True,
     "mount": "/stream",         # solo lo usa el protocolo Icecast
     "usuario": "",              # usuario de la Cuenta de DJ
     "protocolo": "shoutcast_v1",   # "shoutcast_v1" | "icecast"
