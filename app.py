@@ -21,7 +21,7 @@ import webbrowser
 from pathlib import Path
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import audio
 import biblioteca
@@ -38,6 +38,8 @@ from estilo import Consejo, px
 TITULO = "Voz de Filadelfia - Estudio"
 
 # como se llaman los protocolos en pantalla
+CORTINAS = 4          # cuantos botones de cortina hay
+
 ICO_PLAY = "▶"          # play
 ICO_PAUSA = "⏸"         # pausa
 ICO_PARAR = "⏹"         # parar
@@ -394,21 +396,22 @@ class App(tk.Tk):
                         variable=self.var_ducking, style="Caja.TCheckbutton",
                         command=self._cambio_ducking).pack(side="left", padx=px(10))
 
-        # cortinas rapidas
+        # cortinas: sonidos cortos listos para lanzar encima de lo que suene
         ttk.Label(caja, text="CORTINAS   ·   clic para lanzar, clic derecho "
-                              "para asignar un archivo",
+                              "para asignar o renombrar",
                   style="CajaSuave.TLabel").grid(row=6, column=0, columnspan=3,
                                                  sticky="w", pady=(px(8), px(2)))
         cort = ttk.Frame(caja, style="Caja.TFrame")
         cort.grid(row=7, column=0, columnspan=3, sticky="ew")
         self.botones_cortina = []
-        for i in range(4):
-            b = ttk.Button(cort, text="cortina %d" % (i + 1), style="Caja.TButton",
+        self.cortinas = [None] * CORTINAS
+        self.nombres_cortina = [""] * CORTINAS
+        for i in range(CORTINAS):
+            b = ttk.Button(cort, text=str(i + 1), style="Caja.TButton", width=9,
                            command=lambda n=i: self.disparar_cortina(n))
             b.pack(side="left", padx=(0, px(4)))
-            b.bind("<Button-3>", lambda e, n=i: self.asignar_cortina(n))
+            b.bind("<Button-3>", lambda e, n=i: self.menu_cortina(n, e))
             self.botones_cortina.append(b)
-        self.cortinas = [None] * 4
 
     # -------------------------------------------------- oyentes
 
@@ -677,23 +680,73 @@ class App(tk.Tk):
             return
         if not self.mezclador.corriendo:
             self.mezclador.arrancar()
-        self.mezclador.disparar_efecto(ruta, os.path.basename(ruta))
+        self.mezclador.disparar_efecto(ruta, self._texto_cortina(n))
+
+    def _texto_cortina(self, n):
+        """Lo que se lee en el boton: el nombre puesto, o el del archivo."""
+        if self.nombres_cortina[n]:
+            return self.nombres_cortina[n]
+        if self.cortinas[n]:
+            return Path(self.cortinas[n]).stem[:12]
+        return str(n + 1)
+
+    def _pintar_cortina(self, n):
+        b = self.botones_cortina[n]
+        b.configure(text=self._texto_cortina(n))
+        ruta = self.cortinas[n]
+        Consejo(b, ("%s\nArchivo: %s" % (self._texto_cortina(n), Path(ruta).name))
+                if ruta else "Sin asignar. Clic derecho para elegir un audio.")
+
+    def menu_cortina(self, n, evento):
+        """Clic derecho sobre una cortina."""
+        m = tk.Menu(self, tearoff=0)
+        m.add_command(label="Asignar un audio...",
+                      command=lambda: self.asignar_cortina(n))
+        m.add_command(label="Cambiar el nombre...",
+                      command=lambda: self.renombrar_cortina(n))
+        if self.cortinas[n]:
+            m.add_separator()
+            m.add_command(label="Quitar", command=lambda: self.quitar_cortina(n))
+        try:
+            m.tk_popup(evento.x_root, evento.y_root)
+        finally:
+            m.grab_release()
 
     def asignar_cortina(self, n):
         ruta = filedialog.askopenfilename(
-            title="Elegir cortina %d" % (n + 1), parent=self,
+            title="Elegir el audio de la cortina %d" % (n + 1), parent=self,
             filetypes=[("Audio", EXTS), ("Todos", "*.*")])
         if not ruta:
             return
         self.cortinas[n] = ruta
-        nombre = Path(ruta).stem[:14]
-        self.botones_cortina[n].configure(text=nombre)
+        if not self.nombres_cortina[n]:          # nombre de partida, editable
+            self.nombres_cortina[n] = Path(ruta).stem[:12]
+        self._pintar_cortina(n)
         self._guardar_cortinas()
-        self.mensaje("Cortina %d: %s" % (n + 1, nombre))
+        self.mensaje("Cortina %d: %s" % (n + 1, self._texto_cortina(n)))
+
+    def renombrar_cortina(self, n):
+        nuevo = simpledialog.askstring(
+            "Nombre de la cortina",
+            "Como quieres que se lea el boton %d?" % (n + 1),
+            initialvalue=self.nombres_cortina[n] or str(n + 1), parent=self)
+        if nuevo is None:
+            return
+        self.nombres_cortina[n] = nuevo.strip()[:14]
+        self._pintar_cortina(n)
+        self._guardar_cortinas()
+        self.mensaje("Cortina %d: %s" % (n + 1, self._texto_cortina(n)))
+
+    def quitar_cortina(self, n):
+        self.cortinas[n] = None
+        self.nombres_cortina[n] = ""
+        self._pintar_cortina(n)
+        self._guardar_cortinas()
 
     def _guardar_cortinas(self):
         try:
-            config.guardar({"cortinas": self.cortinas})
+            config.guardar({"cortinas": self.cortinas,
+                            "cortinas_nombres": self.nombres_cortina})
         except Exception:
             pass
 
@@ -866,11 +919,14 @@ class App(tk.Tk):
         self.lbl_servidor.configure(
             text=("%s:%s%s" % (host, config.get("puerto"), config.get("mount")))
             if host else "sin servidor configurado")
-        guardadas = config.cargar().get("cortinas") or [None] * 4
-        for i, r in enumerate(guardadas[:4]):
+        guardadas = config.cargar().get("cortinas") or []
+        nombres = config.cargar().get("cortinas_nombres") or []
+        for i in range(CORTINAS):
+            r = guardadas[i] if i < len(guardadas) else None
             if r and os.path.exists(r):
                 self.cortinas[i] = r
-                self.botones_cortina[i].configure(text=Path(r).stem[:14])
+            self.nombres_cortina[i] = (nombres[i] if i < len(nombres) else "") or ""
+            self._pintar_cortina(i)
         carpeta = config.get("carpeta_musica")
         if carpeta and os.path.isdir(carpeta):
             self.biblio = biblioteca.Biblioteca(carpeta)
@@ -1119,21 +1175,46 @@ class DialogoConfig(tk.Toplevel):
                         variable=self.var_mon_act).grid(row=2, column=0, columnspan=2,
                                                         sticky="w", pady=px(6))
 
-        ttk.Separator(f, orient="horizontal").grid(row=3, column=0, columnspan=2,
+        fila_prueba = ttk.Frame(f)
+        fila_prueba.grid(row=3, column=0, columnspan=2, sticky="w")
+        ttk.Button(fila_prueba, text="Probar los auriculares",
+                   command=self.probar_monitor).pack(side="left")
+        self.lbl_monitor = ttk.Label(fila_prueba, text="", style="Suave.TLabel")
+        self.lbl_monitor.pack(side="left", padx=px(8))
+        ttk.Label(f, text="Los auriculares Bluetooth funcionan: Windows convierte "
+                          "el muestreo por su cuenta.",
+                  style="Suave.TLabel").grid(row=4, column=0, columnspan=2,
+                                             sticky="w", pady=(px(2), 0))
+
+        ttk.Separator(f, orient="horizontal").grid(row=5, column=0, columnspan=2,
                                                    sticky="ew", pady=px(8))
         self.var_duck = tk.BooleanVar(value=bool(config.get("ducking")))
         ttk.Checkbutton(f, text="Bajar la musica automaticamente al hablar",
-                        variable=self.var_duck).grid(row=4, column=0, columnspan=2,
+                        variable=self.var_duck).grid(row=6, column=0, columnspan=2,
                                                      sticky="w")
-        ttk.Label(f, text="Cuanto baja:").grid(row=5, column=0, sticky="w", pady=px(4))
+        ttk.Label(f, text="Cuanto baja:").grid(row=7, column=0, sticky="w", pady=px(4))
         self.var_duck_niv = tk.DoubleVar(value=float(config.get("ducking_nivel")) * 100)
         ttk.Scale(f, from_=5, to=80, variable=self.var_duck_niv,
-                  length=px(200)).grid(row=5, column=1, sticky="w")
+                  length=px(200)).grid(row=7, column=1, sticky="w")
 
-        ttk.Separator(f, orient="horizontal").grid(row=6, column=0, columnspan=2,
+        ttk.Separator(f, orient="horizontal").grid(row=8, column=0, columnspan=2,
                                                    sticky="ew", pady=px(8))
-        ttk.Label(f, text="Cambiar de microfono exige volver a salir al aire.",
-                  style="Suave.TLabel").grid(row=7, column=0, columnspan=2, sticky="w")
+        ttk.Label(f, text="Cambiar de microfono o de auriculares exige volver a "
+                          "salir al aire.",
+                  style="Suave.TLabel").grid(row=9, column=0, columnspan=2, sticky="w")
+
+    def probar_monitor(self):
+        """Un pitido por los auriculares elegidos, sin tocar la emision."""
+        self._recoger()
+        self.lbl_monitor.configure(text="sonando...")
+        self.update_idletasks()
+        ok, detalle = self.padre.mezclador.probar_monitor()
+        self.lbl_monitor.configure(text=("se oyo bien" if ok else "no se pudo"))
+        if not ok:
+            messagebox.showerror(
+                "Auriculares",
+                "%s\n\nSi son Bluetooth, comprueba que esten conectados y "
+                "elegidos arriba." % detalle, parent=self)
 
     def _pestana_microfono(self, nb):
         """Ecualizador de la voz: ajustes de fabrica y uno a su gusto."""

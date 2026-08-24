@@ -104,7 +104,7 @@ procesos.py        job object de Windows: ningún ffmpeg sobrevive a la app
 prueba_conexion.py busca solo el puerto y la forma de clave correctos
 eq.py              ecualizador de voz (biquads + scipy), con ajustes de fábrica
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
-pruebas/           148 comprobaciones automáticas
+pruebas/           161 comprobaciones automáticas
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -149,7 +149,7 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
 ## 6. Estado y qué sigue
 
 **Hecho y probado (2026-08-24):** los 11 módulos, **94 comprobaciones en
-verde** (28 del motor, 39 del emisor/ICY, 34 del ecualizador y el grabador, 47 de la
+verde** (33 del motor, 39 del emisor/ICY, 34 del ecualizador y el grabador, 55 de la
 ventana). Todo lo de audio se mide: dB reales, no "parece que suena".
 
 **⛔ GATE PENDIENTE — lo único que falta para darlo por bueno:** el usuario debe
@@ -170,6 +170,26 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **FIX: el monitor no sonaba por los auriculares Bluetooth.**
+  El usuario preguntó si el monitoreo estaba habilitado. Estaba, pero **fallaba
+  en silencio**: sus auriculares `BDM3P` trabajan a 44100 Hz y el mezclador va
+  a 48000, así que `sd.OutputStream` reventaba con *Invalid sample rate* y
+  `motor.arrancar()` se limitaba a apagar el monitor y seguir. Se quedaba sin
+  auriculares sin enterarse. **Solución:** `audio.ajustes_wasapi()` devuelve
+  `sd.WasapiSettings(auto_convert=True)` para los aparatos WASAPI y deja que
+  Windows convierta el muestreo; se aplica al monitor **y al micrófono** (mismo
+  problema con uno inalámbrico), con reserva a abrirlo directo. Verificado:
+  antes fallaba, ahora los dos aparatos abren a 48 kHz. Nuevo botón **"Probar
+  los auriculares"** en Configuración → Audio (pitido corto con entrada y
+  salida suaves, sin salir al aire) y el error del monitor ya se ve.
+  También: **cortinas con nombre propio** — clic derecho abre un menú (asignar
+  audio / cambiar el nombre / quitar), el nombre se ve en el botón, se puede
+  cambiar cuando se quiera y queda guardado en `cortinas_nombres`; sin nombre
+  el botón muestra su número. Confirmado que el **historial de oyentes ya
+  funcionaba** (306 registros en 12 h en `datos/oyentes.db`).
+  161 comprobaciones en verde. — Estado: ✅ — Siguiente: decisión sobre el
+  autoDJ; subir el repositorio a GitHub sigue pendiente (no hay remoto ni `gh`).
 
 - [2026-08-24] **✅ GATE SUPERADO: la emisora salió al aire de verdad.** El
   usuario confirmó que funciona con puerto 8024 (→8025), SHOUTcast v1, cuenta

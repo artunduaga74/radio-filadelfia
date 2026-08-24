@@ -91,7 +91,8 @@ DEFECTOS = {
 
     "carpeta_musica": "",
     "carpeta_efectos": "",
-    "cortinas": [None, None, None, None],   # los 4 botones de cortina
+    "cortinas": [None, None, None, None],        # el audio de cada boton
+    "cortinas_nombres": ["", "", "", ""],        # como se lee cada boton
     "grabar_al_aire": False,    # la grabacion tiene su propio boton
 
     # --- comportamiento

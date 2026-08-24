@@ -94,17 +94,62 @@ class Mezclador:
         return True
 
     def _abrir_monitor(self):
-        try:
-            idx = audio.buscar(config.get("monitor") or "", entrada=False)
-            self._salida = sd.OutputStream(
-                samplerate=self.muestreo, blocksize=BLOQUE, device=idx,
-                channels=CANALES, dtype="float32", latency="low")
-            self._salida.start()
-            return True
-        except Exception as e:
-            self.error = "Monitor: %s" % e
-            self._salida = None
-            return False
+        """
+        Abre los auriculares. Se intenta primero dejando que Windows convierta
+        el muestreo: los auriculares Bluetooth suelen ir a 44100 y el mezclador
+        a 48000, y sin eso la salida falla con "Invalid sample rate" y uno se
+        queda sin monitor sin enterarse.
+        """
+        idx = audio.buscar(config.get("monitor") or "", entrada=False)
+        intentos = (
+            ("con conversion de Windows", audio.ajustes_wasapi(idx)),
+            ("directo", None),
+        )
+        ultimo = ""
+        for _, extras in intentos:
+            try:
+                self._salida = sd.OutputStream(
+                    samplerate=self.muestreo, blocksize=BLOQUE, device=idx,
+                    channels=CANALES, dtype="float32", latency="low",
+                    extra_settings=extras)
+                self._salida.start()
+                self.error = ""
+                return True
+            except Exception as e:
+                ultimo = str(e)
+                self._salida = None
+        self.error = ("No se pudo abrir el monitor (%s): %s"
+                      % (config.get("monitor") or "el del sistema", ultimo))
+        return False
+
+    def probar_monitor(self, segundos=1.0, hz=440.0):
+        """
+        Un pitido corto por los auriculares, para comprobarlos sin salir al
+        aire. Devuelve (ok, explicacion).
+        """
+        idx = audio.buscar(config.get("monitor") or "", entrada=False)
+        for extras in (audio.ajustes_wasapi(idx), None):
+            try:
+                s = sd.OutputStream(samplerate=self.muestreo, blocksize=BLOQUE,
+                                    device=idx, channels=CANALES,
+                                    dtype="float32", extra_settings=extras)
+                s.start()
+                n = int(self.muestreo * segundos)
+                t = np.arange(n) / float(self.muestreo)
+                tono = (0.25 * np.sin(2 * np.pi * hz * t)).astype(np.float32)
+                # entra y sale suave, que un pitido seco molesta
+                rampa = int(self.muestreo * 0.02)
+                tono[:rampa] *= np.linspace(0, 1, rampa)
+                tono[-rampa:] *= np.linspace(1, 0, rampa)
+                bloque = np.column_stack([tono, tono]) * self.vol_monitor
+                s.write(bloque.astype(np.float32))
+                s.stop()
+                s.close()
+                return True, "Sonando por: %s" % (config.get("monitor")
+                                                  or "la salida del sistema")
+            except Exception as e:
+                ultimo = str(e)
+        return False, "No se pudo usar esa salida: %s" % ultimo
 
     def detener(self):
         self._parar.set()

@@ -191,6 +191,30 @@ for _ in range(200):
 check("la cola no crece sin limite", e._cola.qsize() <= 64,
       "%d bloques" % e._cola.qsize())
 
+print("")
+print("=== 9. Monitor por auriculares (incluido Bluetooth) ===")
+import sounddevice as sd
+salidas = audio.listar(entrada=False)
+check("hay alguna salida", len(salidas) > 0, "%d encontradas" % len(salidas))
+for i_dev, nombre_dev, api_dev, ch_dev in salidas:
+    extras = audio.ajustes_wasapi(i_dev)
+    if api_dev == "Windows WASAPI":
+        check("pide conversion a Windows: %s" % nombre_dev[:26], extras is not None)
+    abierto, fallo = False, ""
+    for ex in (extras, None):
+        try:
+            st = sd.OutputStream(samplerate=48000, blocksize=1024, device=i_dev,
+                                 channels=2, dtype="float32", extra_settings=ex)
+            st.start()
+            st.write(np.zeros((1024, 2), dtype=np.float32))   # silencio: no suena
+            st.stop()
+            st.close()
+            abierto = True
+            break
+        except Exception as e:
+            fallo = str(e)[:42]
+    check("se abre a 48 kHz: %s" % nombre_dev[:26], abierto, fallo)
+
 print("\n" + "=" * 60)
 print("  %d comprobaciones OK, %d fallos" % (ok, len(fallos)))
 if fallos:

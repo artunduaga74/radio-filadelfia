@@ -67,6 +67,33 @@ def buscar(nombre, entrada=True):
     return None
 
 
+def ajustes_wasapi(indice):
+    """
+    Deja que Windows convierta el muestreo cuando haga falta.
+
+    Los auriculares Bluetooth suelen trabajar a 44100 Hz y el mezclador va a
+    48000: sin esto, abrir la salida falla con "Invalid sample rate" y el
+    monitor se queda mudo sin decir por que. Comprobado con unos BDM3P.
+    """
+    try:
+        if indice is None:
+            indice = sd.default.device[1]
+        info = sd.query_devices(indice)
+        if sd.query_hostapis()[info["hostapi"]]["name"] == "Windows WASAPI":
+            return sd.WasapiSettings(auto_convert=True)
+    except Exception:
+        pass
+    return None
+
+
+def muestreo_de(indice):
+    """El muestreo propio del aparato (por si hay que rendirse y usar el suyo)."""
+    try:
+        return int(sd.query_devices(indice)["default_samplerate"])
+    except Exception:
+        return 0
+
+
 def nivel(bloque):
     """Nivel de un bloque en dBFS (-60 = silencio, 0 = tope). Para los vumetros."""
     if bloque is None or len(bloque) == 0:
@@ -109,7 +136,8 @@ class Microfono:
             self.stream = sd.InputStream(
                 samplerate=self.muestreo, blocksize=self.bloque,
                 device=idx, channels=canales_disp, dtype="float32",
-                callback=self._llegada, latency="low")
+                callback=self._llegada, latency="low",
+                extra_settings=ajustes_wasapi(idx))
             self.stream.start()
             self.abierto = True
             self.error = ""

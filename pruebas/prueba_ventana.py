@@ -188,6 +188,37 @@ check("y queda el archivo", bool(archivo) and Path(archivo).exists(),
 check("el boton vuelve a su sitio",
       str(a.btn_rec.cget("style")) == "Rec.TButton")
 
+print("")
+print("=== Cortinas con nombre propio ===")
+check("arrancan numeradas", a.botones_cortina[0].cget("text") == "1",
+      repr(a.botones_cortina[0].cget("text")))
+a.cortinas[0] = JINGLE
+a.nombres_cortina[0] = ""
+a._pintar_cortina(0)
+check("al asignar audio toma el nombre del archivo",
+      a.botones_cortina[0].cget("text") == "jingle",
+      repr(a.botones_cortina[0].cget("text")))
+a.nombres_cortina[0] = "Entrada"
+a._pintar_cortina(0)
+a._guardar_cortinas()
+check("se puede poner el nombre que uno quiera",
+      a.botones_cortina[0].cget("text") == "Entrada")
+guardado = config.cargar()
+check("el nombre queda guardado",
+      (guardado.get("cortinas_nombres") or [""])[0] == "Entrada",
+      repr((guardado.get("cortinas_nombres") or [""])[0]))
+check("y el audio tambien",
+      (guardado.get("cortinas") or [None])[0] == JINGLE)
+a.nombres_cortina[0] = "1"
+a._pintar_cortina(0)
+check("se puede cambiar por un numero", a.botones_cortina[0].cget("text") == "1")
+a.quitar_cortina(0)
+check("al quitarla vuelve a su numero",
+      a.botones_cortina[0].cget("text") == "1" and a.cortinas[0] is None)
+check("las demas siguen numeradas",
+      [b.cget("text") for b in a.botones_cortina[1:]] == ["2", "3", "4"],
+      str([b.cget("text") for b in a.botones_cortina[1:]]))
+
 print("\n=== Estado del aire ===")
 check("arranca fuera del aire", not a.emisor.al_aire)
 check("el boton dice SALIR AL AIRE", a.btn_aire.cget("text") == "SALIR AL AIRE",
