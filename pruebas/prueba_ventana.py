@@ -549,6 +549,41 @@ check("ni por arriba", y >= 0, "y=%d" % y)
 v.destroy()
 a.update()
 
+print("")
+print("=== Icono en la barra de tareas ===")
+import ctypes
+from PIL import Image
+buf = ctypes.c_wchar_p()
+try:
+    ctypes.windll.shell32.GetCurrentProcessExplicitAppUserModelID(ctypes.byref(buf))
+    identidad = buf.value or ""
+except Exception:
+    identidad = ""
+check("la aplicacion tiene identidad propia (no la de Python)",
+      "Filadelfia" in identidad, identidad or "(ninguna)")
+check("existe el icono normal", Path(a.ico_normal).exists())
+check("y el de al aire", Path(a.ico_aire).exists())
+
+# el punto rojo tiene que notarse a 16 pixeles, que es como se ve en la barra
+n = Image.open(a.ico_normal).convert("RGB").resize((16, 16))
+r = Image.open(a.ico_aire).convert("RGB").resize((16, 16))
+distintos = sum(1 for pn, pr in zip(n.getdata(), r.getdata())
+                if sum(abs(x - y) for x, y in zip(pn, pr)) > 60)
+check("a 16 px se distingue del normal", distintos >= 8,
+      "%d de 256 pixeles cambian" % distintos)
+rojos = sum(1 for px_ in r.getdata()
+            if px_[0] > 150 and px_[1] < 90 and px_[2] < 90)
+check("y el punto es rojo de verdad", rojos >= 4, "%d pixeles rojos" % rojos)
+
+a._icono_segun_aire(True)
+a.update()
+check("al salir al aire el titulo lo dice", "AL AIRE" in a.title(), a.title())
+check("y cambia el icono", a._icono_puesto == "aire")
+a._icono_segun_aire(False)
+a.update()
+check("al cortar vuelve el titulo normal", a.title() == mod_app.TITULO, a.title())
+check("y el icono normal", a._icono_puesto == "normal")
+
 print("\n=== Estado del aire ===")
 check("arranca fuera del aire", not a.emisor.al_aire)
 check("el boton dice SALIR AL AIRE", a.btn_aire.cget("text") == "SALIR AL AIRE",

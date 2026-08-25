@@ -127,28 +127,82 @@ class App(tk.Tk):
 
     def _preparar_icono(self):
         """
-        Pone el icono de la aplicacion y deja una version pequena para el
-        cartel de la lista. Basta con dejar `icono.png` junto al programa: el
-        `.ico` que necesita Windows se genera solo la primera vez.
+        El icono de la ventana y el de la barra de tareas.
+
+        Windows agrupa las ventanas en la barra por una "identidad de
+        aplicacion", y la nuestra era la de Python: por eso salia el icono de
+        Python en vez del nuestro. Se arregla declarando una identidad propia
+        ANTES de que aparezca la ventana.
+
+        Ademas se prepara una segunda version con un punto rojo, que es la que
+        se pone mientras se esta al aire: asi, con la aplicacion de fondo, se
+        ve de un vistazo en la barra si la emisora esta saliendo.
         """
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "VozDeFiladelfia.Broadcaster")
+        except Exception:
+            pass
+
         carpeta = Path(__file__).resolve().parent
-        png, ico = carpeta / "icono.png", carpeta / "icono.ico"
+        png = carpeta / "icono.png"
+        self.ico_normal = carpeta / "icono.ico"
+        self.ico_aire = carpeta / "icono_aire.ico"
+        medidas = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
         try:
             if png.exists():
-                from PIL import Image, ImageTk
+                from PIL import Image, ImageDraw, ImageTk
                 imagen = Image.open(png).convert("RGBA")
-                if not ico.exists() or ico.stat().st_mtime < png.stat().st_mtime:
-                    imagen.save(ico, format="ICO",
-                                sizes=[(16, 16), (32, 32), (48, 48), (64, 64),
-                                       (128, 128), (256, 256)])
-                lado = px(34)
+                nuevo = (not self.ico_normal.exists()
+                         or self.ico_normal.stat().st_mtime < png.stat().st_mtime)
+                if nuevo:
+                    imagen.save(self.ico_normal, format="ICO", sizes=medidas)
+                if nuevo or not self.ico_aire.exists():
+                    # el mismo icono con un punto rojo de "grabando" abajo a la
+                    # derecha, bien grande para que se distinga a 16 pixeles
+                    aire = imagen.copy()
+                    lado = min(aire.size)
+                    r = int(lado * 0.30)
+                    x, y = aire.size[0] - r - int(lado * 0.04), \
+                        aire.size[1] - r - int(lado * 0.04)
+                    d = ImageDraw.Draw(aire)
+                    d.ellipse([x - r, y - r, x + r, y + r],
+                              fill=(255, 255, 255, 235))
+                    d.ellipse([x - r + int(r * 0.22), y - r + int(r * 0.22),
+                               x + r - int(r * 0.22), y + r - int(r * 0.22)],
+                              fill=(224, 40, 40, 255))
+                    aire.save(self.ico_aire, format="ICO", sizes=medidas)
+
+                lado_logo = px(34)
                 chico = imagen.copy()
-                chico.thumbnail((lado, lado), Image.LANCZOS)
+                chico.thumbnail((lado_logo, lado_logo), Image.LANCZOS)
                 self.logo = ImageTk.PhotoImage(chico)
-            if ico.exists():
-                self.iconbitmap(str(ico))
+            if self.ico_normal.exists():
+                # `default` lo aplica tambien a las ventanas que se abran luego
+                self.iconbitmap(default=str(self.ico_normal))
         except Exception:
             self.logo = None          # sin icono se sigue trabajando igual
+        self._icono_puesto = "normal"
+
+    def _icono_segun_aire(self, al_aire):
+        """
+        Cambia el icono y el titulo de la ventana segun se este al aire.
+
+        El titulo importa tanto como el icono: es lo que se lee al pasar el
+        raton por la barra de tareas y en el conmutador de ventanas.
+        """
+        quiere = "aire" if al_aire else "normal"
+        if quiere == getattr(self, "_icono_puesto", None):
+            return
+        self._icono_puesto = quiere
+        ruta = self.ico_aire if al_aire else self.ico_normal
+        try:
+            if ruta and Path(ruta).exists():
+                self.iconbitmap(default=str(ruta))
+        except Exception:
+            pass
+        self.title(("* AL AIRE - " + TITULO) if al_aire else TITULO)
 
     # ---------------------------------------------------------------- menu
 
@@ -654,6 +708,7 @@ class App(tk.Tk):
         """Una vez por segundo: reloj al aire, encadenar pistas, oyentes."""
         try:
             e = self.emisor
+            self._icono_segun_aire(e.al_aire)
             if e.al_aire:
                 self.lbl_tiempo_aire.configure(text=reloj(e.tiempo_al_aire()))
                 self.lbl_estado_aire.configure(text="AL AIRE",

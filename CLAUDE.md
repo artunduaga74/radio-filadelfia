@@ -106,7 +106,7 @@ eq.py              cadena de voz: ecualizador, compresor, puerta y limitador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           330 comprobaciones automáticas (5 archivos)
+pruebas/           339 comprobaciones automáticas (5 archivos)
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -165,7 +165,7 @@ en GitHub (`artunduaga74/radio-filadelfia`, privado) y al día.
 
 **Cómo trabajar aquí:**
 1. Las pruebas son la red de seguridad: `python pruebas/prueba_*.py`, cinco
-   archivos, **330 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
+   archivos, **339 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
    nada, y **vigilar que el número no baje** — un descenso silencioso ha
    delatado ya tres parches que no se habían aplicado.
 2. Todo lo de audio se **mide** (dB, LUFS, espectro), no se estima. Hay
@@ -206,6 +206,22 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **Icono propio en la barra de tareas, y en rojo al aire.**
+  Al usuario le salía **el icono de Python** en la barra de tareas. Causa:
+  Windows agrupa las ventanas por una *AppUserModelID*, y la de un script de
+  Python es la del propio Python — `iconbitmap()` cambia la ventana pero no eso.
+  Se arregla con
+  `shell32.SetCurrentProcessExplicitAppUserModelID("VozDeFiladelfia.Broadcaster")`
+  **antes** de que aparezca la ventana, más `iconbitmap(default=...)` para que
+  valga también en los diálogos.
+  Su segunda queja era que, con la app de fondo, no sabía si estaba al aire.
+  Ahora **el icono cambia**: se genera `icono_aire.ico` con un punto rojo
+  grande abajo a la derecha, y el título pasa a **"* AL AIRE - Filadelfia
+  Broadcaster"** (que es lo que se lee al pasar el ratón por la barra y en el
+  conmutador de ventanas). Medido a 16 px, que es como se ve de verdad:
+  **92 de 256 píxeles cambian y hay 37 rojos**, así que se distingue.
+  339 comprobaciones en verde. — Estado: ✅ — Siguiente: probar el puerto 8026.
 
 - [2026-08-24] **Metadatos configurables, vista previa y un fallo que él cazó.**
   **(1) El usuario preguntó si la casilla "Empezar a grabar sola al salir al
