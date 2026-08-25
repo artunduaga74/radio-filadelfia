@@ -505,17 +505,23 @@ class App(tk.Tk):
         Consejo(self.btn_rec,
                 "Grabar el programa. Es independiente de estar al aire: puedes poner musica sin grabarla y empezar a grabar cuando arranque el programa.")
 
-        # titulo manual de la transmision
-        tit = ttk.Frame(caja, style="Caja.TFrame")
-        tit.grid(row=5, column=0, sticky="ew", pady=(px(8), 0))
-        ttk.Label(tit, text="Titulo del programa:",
-                  style="CajaSuave.TLabel").pack(anchor="w")
-        fila = ttk.Frame(tit, style="Caja.TFrame")
-        fila.pack(fill="x", pady=(px(2), 0))
+        # Lo que se lee en la radio. Va en UNA sola fila (antes eran dos, con
+        # su rotulo encima) para hacer sitio al autor sin crecer hacia abajo:
+        # si el panel crece, los botones de cortina se quedan sin espacio.
+        fila = ttk.Frame(caja, style="Caja.TFrame")
+        fila.grid(row=5, column=0, sticky="ew", pady=(px(6), 0))
+        ttk.Label(fila, text="Al aire:", style="CajaSuave.TLabel").pack(
+            side="left", padx=(0, px(4)))
         self.var_titulo = tk.StringVar()
-        ttk.Entry(fila, textvariable=self.var_titulo).pack(
-            side="left", fill="x", expand=True)
-        ttk.Button(fila, text="Poner al aire", style="Caja.TButton",
+        e_tit = ttk.Entry(fila, textvariable=self.var_titulo)
+        e_tit.pack(side="left", fill="x", expand=True)
+        Consejo(e_tit, "Titulo del programa, lo que se lee en la radio.")
+        self.var_autor_aire = tk.StringVar(value=config.get("autor", ""))
+        e_aut = ttk.Entry(fila, textvariable=self.var_autor_aire, width=16)
+        e_aut.pack(side="left", padx=(px(4), 0))
+        Consejo(e_aut, "Quien presenta. Sin esto, la radio muestra 'Unknown' "
+                       "donde va el autor.")
+        ttk.Button(fila, text="Poner", style="Caja.TButton", width=7,
                    command=self.poner_titulo).pack(side="left", padx=(px(4), 0))
 
     # -------------------------------------------------- mezcla
@@ -879,14 +885,29 @@ class App(tk.Tk):
             micros[indice]["volumen"] = round(ganancia, 4)
             config.guardar_microfonos(micros)
 
-    def poner_titulo(self):
+    def _texto_al_aire(self):
+        """
+        Lo que se lee en la radio, en el formato que esperan los reproductores.
+
+        Va como "Autor - Titulo": mandando solo el titulo, la web de la emisora
+        y las aplicaciones ponen "Unknown" donde deberia ir el autor.
+        """
         titulo = self.var_titulo.get().strip()
-        if not titulo:
+        autor = self.var_autor_aire.get().strip()
+        if titulo and autor:
+            return "%s - %s" % (autor, titulo)
+        return titulo or autor
+
+    def poner_titulo(self):
+        texto = self._texto_al_aire()
+        if not texto:
             return
-        ok, detalle = servidor.actualizar_titulo(titulo)
-        self.mensaje("Titulo al aire: %s" % titulo if ok
+        # el autor se recuerda: casi siempre es el mismo
+        config.guardar({"autor": self.var_autor_aire.get().strip()})
+        ok, detalle = servidor.actualizar_titulo(texto)
+        self.mensaje("Al aire: %s" % texto if ok
                      else "No se pudo poner el titulo (%s)" % detalle)
-        self._anotar("titulo -> %s (%s)" % (titulo, detalle))
+        self._anotar("titulo -> %s (%s)" % (texto, detalle))
 
     # ---------------------------------------------------------------- musica
 

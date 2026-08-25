@@ -106,7 +106,7 @@ eq.py              cadena de voz: ecualizador, compresor, puerta y limitador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           344 comprobaciones automáticas (5 archivos)
+pruebas/           350 comprobaciones automáticas (5 archivos)
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -165,7 +165,7 @@ en GitHub (`artunduaga74/radio-filadelfia`, privado) y al día.
 
 **Cómo trabajar aquí:**
 1. Las pruebas son la red de seguridad: `python pruebas/prueba_*.py`, cinco
-   archivos, **344 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
+   archivos, **350 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
    nada, y **vigilar que el número no baje** — un descenso silencioso ha
    delatado ya tres parches que no se habían aplicado.
 2. Todo lo de audio se **mide** (dB, LUFS, espectro), no se estima. Hay
@@ -206,6 +206,24 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-25] **La radio mostraba "Unknown": faltaba el autor en el stream.**
+  El usuario vio que el título salía bien pero el autor aparecía como
+  "Unknown". Causa: a `servidor.actualizar_titulo()` se le mandaba **solo el
+  título**, y los reproductores esperan el formato **`Autor - Título`** en esa
+  misma cadena (SHOUTcast manda un único campo de texto, no dos). Nuevo
+  `_texto_al_aire()`, que junta ambos y aguanta que falte cualquiera de los dos.
+  El autor se recuerda al pulsar "Poner".
+  **Campo nuevo en el panel del reproductor** sin crecer hacia abajo: las dos
+  filas de antes (rótulo "Título del programa:" encima, entrada debajo) se
+  juntaron en **una sola** — `Al aire: [título] [autor] [Poner]`. El panel pasa
+  de **305 a 270 px** *añadiendo* un campo, con lo que las cortinas ganan aire
+  en vez de perderlo. Comprobado a cuatro anchos: la última cortina acaba en
+  793 px con la ventana en 900, o sea 107 de margen.
+  Ojo con la distinción: en el **stream** va `Autor - Título` en una sola
+  cadena; en las **grabaciones** el autor va en su etiqueta ID3 propia y el
+  título en la suya. Son dos sitios distintos y no hay que mezclarlos.
+  350 comprobaciones en verde. — Estado: ✅ — Siguiente: probar el puerto 8026.
 
 - [2026-08-25] **El icono se veía borroso en la barra: faltaba el tamaño 24.**
   El `.ico` se generaba con 16/32/48/64/128/256, y **la barra de tareas normal

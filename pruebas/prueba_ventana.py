@@ -606,6 +606,38 @@ check("al cortar vuelve el titulo normal", a.title() == mod_app.TITULO, a.title(
 check("y el icono normal", a._icono_puesto == "normal")
 a.update()
 
+print("")
+print("=== Lo que se lee en la radio: Autor - Titulo ===")
+a.var_titulo.set("Porque volver a Filadelfia")
+a.var_autor_aire.set("Fernando Erick Miranda")
+check("manda autor y titulo juntos",
+      a._texto_al_aire() == "Fernando Erick Miranda - Porque volver a Filadelfia",
+      a._texto_al_aire())
+a.var_autor_aire.set("")
+check("sin autor manda solo el titulo",
+      a._texto_al_aire() == "Porque volver a Filadelfia", a._texto_al_aire())
+a.var_titulo.set("")
+a.var_autor_aire.set("Solo el autor")
+check("y al reves tambien", a._texto_al_aire() == "Solo el autor",
+      a._texto_al_aire())
+a.var_titulo.set("")
+a.var_autor_aire.set("")
+check("con los dos vacios no manda nada", a._texto_al_aire() == "")
+a.var_autor_aire.set("Fernando Erick Miranda")
+
+print("")
+print("=== El panel del reproductor deja sitio a las cortinas ===")
+a.geometry("1500x900")
+a.update()
+a.update_idletasks()
+alto_panel = a.lbl_pista.master.winfo_reqheight()
+check("el panel no se dispara de alto", alto_panel < 300,
+      "%d px (antes de compactarlo, 305)" % alto_panel)
+ultima = a.botones_cortina[-1]
+fin = (ultima.winfo_rooty() - a.winfo_rooty()) + ultima.winfo_height()
+check("la ultima cortina cabe entera", fin <= a.winfo_height(),
+      "acaba en %d de %d" % (fin, a.winfo_height()))
+
 print("\n=== Estado del aire ===")
 check("arranca fuera del aire", not a.emisor.al_aire)
 check("el boton dice SALIR AL AIRE", a.btn_aire.cget("text") == "SALIR AL AIRE",
