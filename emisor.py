@@ -203,10 +203,11 @@ class Emisor:
                 return False
 
             config.asegurar_carpetas()
+            # El emisor YA NO graba por su cuenta. Lo hacia con una segunda
+            # salida de este mismo ffmpeg, y esas grabaciones salian sin
+            # etiquetas ni caratula y sin que el boton REC se enterara. De
+            # grabar se encarga grabador.py, que es quien sabe hacerlo bien.
             self.grabacion = None
-            if aj.get("grabar_al_aire", True):
-                nombre = datetime.now().strftime("programa_%Y-%m-%d_%H-%M.mp3")
-                self.grabacion = config.carpeta_graba() / nombre
 
             por_icy = aj.get("protocolo") == "shoutcast_v1"
             self._poner(CONECTANDO, "")

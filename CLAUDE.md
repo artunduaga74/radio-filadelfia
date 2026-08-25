@@ -106,7 +106,7 @@ eq.py              cadena de voz: ecualizador, compresor, puerta y limitador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           314 comprobaciones automáticas (5 archivos)
+pruebas/           330 comprobaciones automáticas (5 archivos)
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -165,7 +165,7 @@ en GitHub (`artunduaga74/radio-filadelfia`, privado) y al día.
 
 **Cómo trabajar aquí:**
 1. Las pruebas son la red de seguridad: `python pruebas/prueba_*.py`, cinco
-   archivos, **314 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
+   archivos, **330 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
    nada, y **vigilar que el número no baje** — un descenso silencioso ha
    delatado ya tres parches que no se habían aplicado.
 2. Todo lo de audio se **mide** (dB, LUFS, espectro), no se estima. Hay
@@ -206,6 +206,26 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **Metadatos configurables, vista previa y un fallo que él cazó.**
+  **(1) El usuario preguntó si la casilla "Empezar a grabar sola al salir al
+  aire" funcionaba. Funcionaba MAL.** Iba por el camino viejo: el emisor
+  grababa con una segunda salida de su propio ffmpeg, así que esas grabaciones
+  salían **sin etiquetas y sin carátula**, el botón REC no se enteraba y el
+  archivo se llamaba siempre `programa_FECHA.mp3`. Quedó suelto al separar la
+  grabación en `grabador.py`. **Arreglado:** el emisor ya no graba nunca; la
+  casilla arranca el `Grabador`, que es el único que sabe poner los datos.
+  *Lección: al mover una responsabilidad de módulo, buscar quién más la hacía.*
+  **(2) Metadatos configurables por temporada o programa**, en la pestaña
+  **Transmisión** (antes "Carpetas"): autor, álbum/temporada, género y
+  comentario, más una **carátula propia** elegible con el explorador. Cada campo
+  vacío cae en el valor de la emisora, así que nunca queda un hueco.
+  **(3) Vista previa** en esa misma pestaña: una tarjeta que muestra cómo se
+  verá en un reproductor (carátula, título, autor, álbum, género y fecha). Se
+  calcula con **las mismas funciones** que graban el MP3
+  (`grabador.etiquetas()` y `grabador.portada()`), no con una copia del texto:
+  si cambia el grabador, la vista cambia sola.
+  330 comprobaciones en verde. — Estado: ✅ — Siguiente: probar el puerto 8026.
 
 - [2026-08-24] **Metadatos con carátula en las grabaciones y corte automático.**
   **(1) Las grabaciones ya no dicen "Desconocido".** `grabador.etiquetas()`

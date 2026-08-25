@@ -108,10 +108,12 @@ def etiquetas(titulo=""):
         "artist": autor,
         "album_artist": autor,
         "album": album,
-        "genre": (aj.get("genero") or "Christian").strip(),
+        "genre": ((aj.get("genero_grabacion") or "").strip()
+                  or (aj.get("genero") or "Christian").strip()),
         "date": ahora.strftime("%Y-%m-%d"),
         "TYER": ahora.strftime("%Y"),
-        "comment": (aj.get("url_emisora") or "").strip() or emisora,
+        "comment": ((aj.get("comentario") or "").strip()
+                    or (aj.get("url_emisora") or "").strip() or emisora),
         "encoded_by": "Filadelfia Broadcaster",
     }
     return {k: v for k, v in datos.items() if v}

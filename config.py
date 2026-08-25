@@ -134,6 +134,8 @@ DEFECTOS = {
     # "Desconocido". La portada se busca sola en la carpeta de la aplicacion.
     "autor": "Fernando Erick Miranda",
     "album_grabacion": "",          # en blanco = el nombre de la emisora
+    "genero_grabacion": "",         # en blanco = el genero de la emisora
+    "comentario": "",               # en blanco = la web de la emisora
     "portada": "",                  # en blanco = filadelfia broadcaster.png
 
     "carpeta_musica": "",

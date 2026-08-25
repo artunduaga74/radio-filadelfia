@@ -522,11 +522,18 @@ nb = ttk.Notebook(v)
 nb.pack()
 v._pestana_audio(nb)
 v._pestana_microfono(nb)
-v._pestana_carpetas(nb)
+v._pestana_transmision(nb)
 v._pestana_servidor(nb)
 pestanas = [nb.tab(i, "text") for i in range(len(nb.tabs()))]
 check("Audio es la primera pestana", pestanas[0] == "Audio", str(pestanas))
 check("Servidor es la ultima", pestanas[-1] == "Servidor", str(pestanas))
+check("la pestana de carpetas pasa a llamarse Transmision",
+      "Transmision" in pestanas, str(pestanas))
+check("tiene los campos de metadatos", hasattr(v, "vars_meta") and
+      "autor" in v.vars_meta, str(list(getattr(v, "vars_meta", {}))))
+check("y la vista previa del reproductor",
+      hasattr(v, "vista_meta") and bool(v.vista_meta["title"].cget("text")),
+      v.vista_meta["title"].cget("text") if hasattr(v, "vista_meta") else "-")
 check("tiene el nivelador de voz", hasattr(v, "var_comp"))
 check("y el metodo Aplicar", callable(getattr(v, "aplicar", None)))
 v.update_idletasks()

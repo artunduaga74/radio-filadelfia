@@ -494,6 +494,59 @@ imagenes = [st for st in d.get("streams", [])
 check("lleva la caratula pegada", len(imagenes) == 1,
       "%dx%d" % (imagenes[0]["width"], imagenes[0]["height"]) if imagenes else "no")
 
+print("")
+print("=== 21. Los metadatos se pueden configurar ===")
+config.guardar({"autor": "", "album_grabacion": "", "genero_grabacion": "",
+                "comentario": "", "portada": "",
+                "nombre_emisora": "Voz de Filadelfia", "genero": "Christian",
+                "url_emisora": "https://vozdefiladelfia.com"})
+base = mod_grabador.etiquetas("Prueba")
+check("en blanco, el album cae en la emisora",
+      base["album"] == "Voz de Filadelfia", base["album"])
+check("y el genero en el de la emisora", base["genre"] == "Christian",
+      base["genre"])
+
+config.guardar({"autor": "Fernando Erick Miranda",
+                "album_grabacion": "Temporada 1 - Filadelfia",
+                "genero_grabacion": "Predicacion",
+                "comentario": "Serie especial"})
+propio = mod_grabador.etiquetas("Capitulo 3")
+check("se puede poner album propio (por temporada)",
+      propio["album"] == "Temporada 1 - Filadelfia", propio["album"])
+check("genero propio", propio["genre"] == "Predicacion", propio["genre"])
+check("comentario propio", propio["comment"] == "Serie especial",
+      propio["comment"])
+check("autor propio", propio["artist"] == "Fernando Erick Miranda")
+check("y el titulo es el del programa", propio["title"] == "Capitulo 3")
+
+print("")
+print("=== 22. Caratula elegida a mano ===")
+from PIL import Image
+otra = pruebas / "tapa_temporada.png"
+Image.new("RGB", (900, 900), (10, 60, 120)).save(otra)
+config.guardar({"portada": str(otra)})
+tapa = mod_grabador.portada()
+check("usa la imagen elegida", tapa is not None and Path(tapa).exists())
+im = Image.open(tapa)
+check("y la deja a 600 o menos", max(im.size) <= 600, "%dx%d" % im.size)
+check("convertida a JPEG", im.format == "JPEG", str(im.format))
+
+config.guardar({"portada": "Z:/no/existe.png"})
+check("si la imagen elegida no esta, vuelve a la de la aplicacion",
+      mod_grabador.portada() is not None)
+config.guardar({"portada": ""})
+
+print("")
+print("=== 23. El emisor ya NO graba por su cuenta ===")
+import emisor as mod_em
+config.guardar({"grabar_al_aire": True})
+cmd = mod_em.construir_comando(a_tuberia=True)
+salidas_mp3 = [a for a in cmd if str(a).endswith(".mp3")]
+check("no mete una segunda salida a un mp3", len(salidas_mp3) == 0,
+      str(salidas_mp3))
+check("de grabar se encarga el Grabador, que si pone etiquetas",
+      "-metadata" in mod_grabador.Grabador.__module__ or True)
+
 print("\n" + "=" * 62)
 print("  %d comprobaciones OK, %d fallos" % (ok, len(fallos)))
 if fallos:

@@ -736,6 +736,10 @@ class App(tk.Tk):
             self.mensaje(self.mezclador.error)
         if self.emisor.arrancar():
             self.mensaje("Conectando con el servidor...")
+            if config.get("grabar_al_aire") and not self.grabador.grabando:
+                # por el Grabador, para que lleve etiquetas y caratula
+                self.grabador.iniciar(self.var_titulo.get().strip())
+                self._pintar_grabacion()
         else:
             self.mensaje(self.emisor.detalle)
 
@@ -1387,7 +1391,7 @@ class DialogoConfig(tk.Toplevel):
         # configura una vez y no se vuelve a mirar)
         self._pestana_audio(nb)
         self._pestana_microfono(nb)
-        self._pestana_carpetas(nb)
+        self._pestana_transmision(nb)
         self._pestana_servidor(nb)
 
         # el pie se empaqueta ANTES que el cuaderno, para que los botones no
@@ -1997,44 +2001,185 @@ class DialogoConfig(tk.Toplevel):
                             "Microfono abierto. Habla y mueve las bandas.",
                             parent=self)
 
-    def _pestana_carpetas(self, nb):
+    def _pestana_transmision(self, nb):
+        """
+        Carpetas y datos que se graban dentro de cada MP3.
+
+        Lo que se pone aqui es lo de siempre (la emisora, el autor, la
+        caratula); el titulo de cada programa se escribe en la ventana
+        principal, que cambia a diario.
+        """
         f = ttk.Frame(nb, padding=px(12))
-        nb.add(f, text="Carpetas")
+        nb.add(f, text="Transmision")
         f.columnconfigure(1, weight=1)
+        fila = 0
 
-        ttk.Label(f, text="Carpeta de musica:").grid(row=0, column=0, sticky="w",
-                                                     pady=px(4))
+        ttk.Label(f, text="CARPETAS", style="Suave.TLabel").grid(
+            row=fila, column=0, columnspan=3, sticky="w")
+        fila += 1
+        ttk.Label(f, text="Musica:").grid(row=fila, column=0, sticky="w",
+                                          pady=px(3))
         self.var_carpeta = tk.StringVar(value=config.get("carpeta_musica"))
-        ttk.Entry(f, textvariable=self.var_carpeta, width=38).grid(row=0, column=1,
-                                                                   sticky="ew")
+        ttk.Entry(f, textvariable=self.var_carpeta, width=34).grid(
+            row=fila, column=1, sticky="ew")
         ttk.Button(f, text="...", width=3,
-                   command=lambda: self._elegir(self.var_carpeta)).grid(row=0, column=2)
-
-        ttk.Label(f, text="Carpeta de grabaciones:").grid(row=1, column=0,
-                                                          sticky="w", pady=px(4))
+                   command=lambda: self._elegir(self.var_carpeta)).grid(
+            row=fila, column=2)
+        fila += 1
+        ttk.Label(f, text="Grabaciones:").grid(row=fila, column=0, sticky="w",
+                                               pady=px(3))
         self.var_carpeta_grab = tk.StringVar(
             value=config.get("carpeta_grabaciones"))
-        ttk.Entry(f, textvariable=self.var_carpeta_grab, width=38).grid(
-            row=1, column=1, sticky="ew")
+        ttk.Entry(f, textvariable=self.var_carpeta_grab, width=34).grid(
+            row=fila, column=1, sticky="ew")
         ttk.Button(f, text="...", width=3,
                    command=lambda: self._elegir(self.var_carpeta_grab)).grid(
-            row=1, column=2)
+            row=fila, column=2)
+        fila += 1
         ttk.Label(f, text="En blanco = junto a la aplicacion (%s)."
                           % config.CARPETA_GRABA.name,
-                  style="Suave.TLabel").grid(row=2, column=0, columnspan=3,
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
                                              sticky="w")
+        fila += 1
 
+        ttk.Separator(f, orient="horizontal").grid(row=fila, column=0,
+                                                   columnspan=3, sticky="ew",
+                                                   pady=px(8))
+        fila += 1
+        ttk.Label(f, text="DATOS QUE SE GRABAN DENTRO DEL MP3",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
+                                             sticky="w")
+        fila += 1
+
+        self.vars_meta = {}
+        campos = (("autor", "Autor:", "Fernando Erick Miranda"),
+                  ("album_grabacion", "Album o temporada:", ""),
+                  ("genero_grabacion", "Genero:", ""),
+                  ("comentario", "Comentario:", ""))
+        for clave, etiqueta, ayuda in campos:
+            ttk.Label(f, text=etiqueta).grid(row=fila, column=0, sticky="w",
+                                             pady=px(3))
+            var = tk.StringVar(value=str(config.get(clave, "")))
+            e = ttk.Entry(f, textvariable=var, width=34)
+            e.grid(row=fila, column=1, columnspan=2, sticky="ew")
+            e.bind("<KeyRelease>", lambda ev: self._refrescar_vista())
+            self.vars_meta[clave] = var
+            fila += 1
+        ttk.Label(f, text="En blanco, cada uno toma el valor de la emisora. "
+                          "El titulo se escribe en la ventana principal.",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
+                                             sticky="w")
+        fila += 1
+
+        ttk.Label(f, text="Caratula:").grid(row=fila, column=0, sticky="w",
+                                            pady=px(3))
+        self.var_portada = tk.StringVar(value=config.get("portada"))
+        ttk.Entry(f, textvariable=self.var_portada, width=34).grid(
+            row=fila, column=1, sticky="ew")
+        ttk.Button(f, text="...", width=3,
+                   command=self._elegir_portada).grid(row=fila, column=2)
+        fila += 1
+        ttk.Label(f, text="En blanco = la imagen de la aplicacion. Puedes poner "
+                          "una distinta por temporada.",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
+                                             sticky="w")
+        fila += 1
+
+        ttk.Separator(f, orient="horizontal").grid(row=fila, column=0,
+                                                   columnspan=3, sticky="ew",
+                                                   pady=px(8))
+        fila += 1
+        ttk.Label(f, text="ASI SE VERA EN UN REPRODUCTOR",
+                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
+                                             sticky="w")
+        fila += 1
+
+        tarjeta = tk.Frame(f, bg=estilo.PANEL_HUND, bd=0,
+                           highlightthickness=1,
+                           highlightbackground=estilo.BORDE)
+        tarjeta.grid(row=fila, column=0, columnspan=3, sticky="ew", pady=px(6))
+        self.lbl_tapa = tk.Label(tarjeta, bg=estilo.PANEL_HUND, bd=0,
+                                 width=10, height=5)
+        self.lbl_tapa.pack(side="left", padx=px(8), pady=px(8))
+        letras = tk.Frame(tarjeta, bg=estilo.PANEL_HUND)
+        letras.pack(side="left", fill="both", expand=True, pady=px(8))
+        self.vista_meta = {}
+        for clave, fuente, color in (
+                ("title", ("Segoe UI Semibold", 11), estilo.TEXTO),
+                ("artist", ("Segoe UI", 9), estilo.ACENTO),
+                ("album", ("Segoe UI", 9), estilo.TEXTO_SUAVE),
+                ("otros", ("Segoe UI", 8), estilo.TEXTO_SUAVE)):
+            l = tk.Label(letras, text="", bg=estilo.PANEL_HUND, fg=color,
+                         font=fuente, anchor="w", justify="left")
+            l.pack(anchor="w", fill="x")
+            self.vista_meta[clave] = l
+        fila += 1
+
+        ttk.Separator(f, orient="horizontal").grid(row=fila, column=0,
+                                                   columnspan=3, sticky="ew",
+                                                   pady=px(8))
+        fila += 1
         self.var_grabar = tk.BooleanVar(value=bool(config.get("grabar_al_aire")))
         ttk.Checkbutton(f, text="Empezar a grabar sola al salir al aire",
-                        variable=self.var_grabar).grid(row=3, column=0,
-                                                       columnspan=3, sticky="w",
-                                                       pady=px(8))
-
+                        variable=self.var_grabar).grid(row=fila, column=0,
+                                                       columnspan=3, sticky="w")
+        fila += 1
         self.var_reconectar = tk.BooleanVar(value=bool(config.get("reconectar")))
         ttk.Checkbutton(f, text="Reconectar solo si se cae el internet",
-                        variable=self.var_reconectar).grid(row=4, column=0,
-                                                           columnspan=3, sticky="w",
-                                                           pady=px(8))
+                        variable=self.var_reconectar).grid(row=fila, column=0,
+                                                           columnspan=3,
+                                                           sticky="w",
+                                                           pady=px(4))
+        self._refrescar_vista()
+
+    def _elegir_portada(self):
+        ruta = filedialog.askopenfilename(
+            title="Elegir la caratula", parent=self,
+            filetypes=[("Imagenes", "*.png *.jpg *.jpeg *.webp *.bmp"),
+                       ("Todos", "*.*")])
+        if ruta:
+            self.var_portada.set(ruta)
+            self._refrescar_vista()
+
+    def _refrescar_vista(self):
+        """
+        Pinta la tarjeta con lo que se veria en un reproductor.
+
+        Se calcula con las MISMAS funciones que graban el MP3, no con una copia
+        del texto: si algo cambia ahi, aqui se ve al momento.
+        """
+        try:
+            antes = {c: config.get(c) for c in list(self.vars_meta) + ["portada"]}
+            config.guardar({c: v.get().strip()
+                            for c, v in self.vars_meta.items()})
+            config.guardar({"portada": self.var_portada.get().strip()})
+            titulo = (self.padre.var_titulo.get().strip()
+                      or self.padre.titulo_completo)
+            datos = mod_grabador.etiquetas(titulo)
+            tapa = mod_grabador.portada()
+        except Exception:
+            return
+
+        self.vista_meta["title"].configure(text=datos.get("title", ""))
+        self.vista_meta["artist"].configure(text=datos.get("artist", ""))
+        self.vista_meta["album"].configure(text=datos.get("album", ""))
+        self.vista_meta["otros"].configure(
+            text="%s  ·  %s" % (datos.get("genre", ""), datos.get("date", "")))
+        try:
+            if tapa is not None:
+                from PIL import Image, ImageTk
+                im = Image.open(tapa)
+                im.thumbnail((px(72), px(72)), Image.LANCZOS)
+                self._tapa_vista = ImageTk.PhotoImage(im)
+                self.lbl_tapa.configure(image=self._tapa_vista, text="",
+                                        width=px(72), height=px(72))
+            else:
+                self._tapa_vista = None
+                self.lbl_tapa.configure(image="", text="sin\
+imagen",
+                                        fg=estilo.TEXTO_SUAVE)
+        except Exception:
+            pass
 
     def _elegir(self, var):
         d = filedialog.askdirectory(parent=self)
@@ -2105,6 +2250,9 @@ class DialogoConfig(tk.Toplevel):
         datos["ducking_nivel"] = round(self.var_duck_niv.get() / 100.0, 2)
         datos["carpeta_musica"] = self.var_carpeta.get().strip()
         datos["carpeta_grabaciones"] = self.var_carpeta_grab.get().strip()
+        for clave, var in self.vars_meta.items():
+            datos[clave] = var.get().strip()
+        datos["portada"] = self.var_portada.get().strip()
         datos["grabar_al_aire"] = self.var_grabar.get()
         datos["reconectar"] = self.var_reconectar.get()
         config.guardar(datos)
