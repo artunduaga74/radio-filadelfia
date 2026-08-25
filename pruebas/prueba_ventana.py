@@ -564,6 +564,26 @@ check("la aplicacion tiene identidad propia (no la de Python)",
 check("existe el icono normal", Path(a.ico_normal).exists())
 check("y el de al aire", Path(a.ico_aire).exists())
 
+# El 24 es el que pide la barra de tareas normal. Si falta, Windows encoge el
+# de 32 por su cuenta y el icono se ve borroso: medido, la mitad de definicion.
+for ruta, comose in ((a.ico_normal, "normal"), (a.ico_aire, "al aire")):
+    guardados = sorted(t[0] for t in Image.open(ruta).info.get("sizes", []))
+    check("el icono %s trae el tamano 24 (el de la barra)" % comose,
+          24 in guardados, str(guardados))
+    check("y tambien 16, 32 y 48" ,
+          all(t in guardados for t in (16, 32, 48)), str(guardados))
+
+def _definicion(imagen):
+    g = np.asarray(imagen.convert("L"), dtype=float)
+    return float(np.sqrt((np.diff(g, axis=1) ** 2).mean()
+                         + (np.diff(g, axis=0) ** 2).mean()))
+
+chico = Image.open(a.ico_normal)
+chico.size = (24, 24)
+chico.load()
+check("el de 24 se ve definido, no empastado", _definicion(chico) > 90,
+      "%.0f (antes de arreglarlo, 60)" % _definicion(chico))
+
 # el punto rojo tiene que notarse a 16 pixeles, que es como se ve en la barra
 n = Image.open(a.ico_normal).convert("RGB").resize((16, 16))
 r = Image.open(a.ico_aire).convert("RGB").resize((16, 16))
@@ -575,14 +595,16 @@ rojos = sum(1 for px_ in r.getdata()
             if px_[0] > 150 and px_[1] < 90 and px_[2] < 90)
 check("y el punto es rojo de verdad", rojos >= 4, "%d pixeles rojos" % rojos)
 
+# sin update() en medio: el reloj de la ventana corre cada segundo y vuelve a
+# poner el estado real (fuera del aire), que es justo lo que debe hacer en uso
+# normal. Aqui se comprueba el mecanismo, no el reloj.
 a._icono_segun_aire(True)
-a.update()
 check("al salir al aire el titulo lo dice", "AL AIRE" in a.title(), a.title())
 check("y cambia el icono", a._icono_puesto == "aire")
 a._icono_segun_aire(False)
-a.update()
 check("al cortar vuelve el titulo normal", a.title() == mod_app.TITULO, a.title())
 check("y el icono normal", a._icono_puesto == "normal")
+a.update()
 
 print("\n=== Estado del aire ===")
 check("arranca fuera del aire", not a.emisor.al_aire)

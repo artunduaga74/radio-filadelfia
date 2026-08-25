@@ -469,3 +469,63 @@ class CurvaEQ(tk.Canvas):
             linea += [margen + util_a * frac, y_de(db)]
         if len(linea) >= 4:
             self.create_line(linea, fill=ACENTO, width=px(2), smooth=True)
+
+
+# ------------------------------------------------------------------ iconos
+
+# Los tamanos que Windows pide de verdad. El 24 es imprescindible: es el que
+# usa la barra de tareas normal, y si no esta, Windows encoge el de 32 con un
+# filtro barato y el icono se ve borroso. Medido: incluirlo dobla la definicion.
+MEDIDAS_ICONO = [(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48),
+                 (64, 64), (96, 96), (128, 128), (256, 256)]
+
+
+def _encoger(imagen, lado):
+    """
+    Reduce con LANCZOS y realza el borde en los tamanos pequenos.
+
+    Un logo con detalle fino (alas, un microfono) se empasta al bajar de 1254
+    pixeles a 16 o 24 por mucho filtro que se use; el realce le devuelve el
+    contorno. Se aplica solo al color: la transparencia se deja tal cual, o
+    aparecerian halos en el borde.
+    """
+    from PIL import Image, ImageFilter
+    chica = imagen.resize((lado, lado), Image.LANCZOS)
+    if lado > 64:
+        return chica
+    rgb, alfa = chica.convert("RGB"), chica.split()[-1]
+    rgb = rgb.filter(ImageFilter.UnsharpMask(radius=0.8, percent=110, threshold=0))
+    return Image.merge("RGBA", (*rgb.split(), alfa))
+
+
+def punto_al_aire(imagen):
+    """La misma imagen con un punto rojo de grabacion abajo a la derecha."""
+    from PIL import ImageDraw
+    a = imagen.copy()
+    lado = min(a.size)
+    r = int(lado * 0.30)
+    x = a.size[0] - r - int(lado * 0.04)
+    y = a.size[1] - r - int(lado * 0.04)
+    d = ImageDraw.Draw(a)
+    d.ellipse([x - r, y - r, x + r, y + r], fill=(255, 255, 255, 235))
+    hueco = int(r * 0.22)
+    d.ellipse([x - r + hueco, y - r + hueco, x + r - hueco, y + r - hueco],
+              fill=(224, 40, 40, 255))
+    return a
+
+
+def generar_iconos(png, ico_normal, ico_aire):
+    """
+    Rehace los dos .ico a partir del PNG. Devuelve la imagen original.
+
+    Cada tamano se genera desde el original a su medida exacta, en vez de
+    dejar que Windows escale el que mas se le parezca.
+    """
+    from PIL import Image
+    imagen = Image.open(png).convert("RGBA")
+    for destino, dibujo in ((ico_normal, imagen),
+                            (ico_aire, punto_al_aire(imagen))):
+        capas = [_encoger(dibujo, lado) for lado, _ in MEDIDAS_ICONO]
+        capas[-1].save(destino, format="ICO", sizes=MEDIDAS_ICONO,
+                       append_images=capas[:-1])
+    return imagen

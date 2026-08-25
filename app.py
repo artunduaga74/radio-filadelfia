@@ -149,31 +149,17 @@ class App(tk.Tk):
         png = carpeta / "icono.png"
         self.ico_normal = carpeta / "icono.ico"
         self.ico_aire = carpeta / "icono_aire.ico"
-        medidas = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
         try:
             if png.exists():
-                from PIL import Image, ImageDraw, ImageTk
-                imagen = Image.open(png).convert("RGBA")
+                from PIL import ImageTk, Image
                 nuevo = (not self.ico_normal.exists()
+                         or not self.ico_aire.exists()
                          or self.ico_normal.stat().st_mtime < png.stat().st_mtime)
                 if nuevo:
-                    imagen.save(self.ico_normal, format="ICO", sizes=medidas)
-                if nuevo or not self.ico_aire.exists():
-                    # el mismo icono con un punto rojo de "grabando" abajo a la
-                    # derecha, bien grande para que se distinga a 16 pixeles
-                    aire = imagen.copy()
-                    lado = min(aire.size)
-                    r = int(lado * 0.30)
-                    x, y = aire.size[0] - r - int(lado * 0.04), \
-                        aire.size[1] - r - int(lado * 0.04)
-                    d = ImageDraw.Draw(aire)
-                    d.ellipse([x - r, y - r, x + r, y + r],
-                              fill=(255, 255, 255, 235))
-                    d.ellipse([x - r + int(r * 0.22), y - r + int(r * 0.22),
-                               x + r - int(r * 0.22), y + r - int(r * 0.22)],
-                              fill=(224, 40, 40, 255))
-                    aire.save(self.ico_aire, format="ICO", sizes=medidas)
-
+                    imagen = estilo.generar_iconos(png, self.ico_normal,
+                                                   self.ico_aire)
+                else:
+                    imagen = Image.open(png).convert("RGBA")
                 lado_logo = px(34)
                 chico = imagen.copy()
                 chico.thumbnail((lado_logo, lado_logo), Image.LANCZOS)

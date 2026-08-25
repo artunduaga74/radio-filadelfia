@@ -106,7 +106,7 @@ eq.py              cadena de voz: ecualizador, compresor, puerta y limitador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           339 comprobaciones automáticas (5 archivos)
+pruebas/           344 comprobaciones automáticas (5 archivos)
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -165,7 +165,7 @@ en GitHub (`artunduaga74/radio-filadelfia`, privado) y al día.
 
 **Cómo trabajar aquí:**
 1. Las pruebas son la red de seguridad: `python pruebas/prueba_*.py`, cinco
-   archivos, **339 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
+   archivos, **344 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
    nada, y **vigilar que el número no baje** — un descenso silencioso ha
    delatado ya tres parches que no se habían aplicado.
 2. Todo lo de audio se **mide** (dB, LUFS, espectro), no se estima. Hay
@@ -206,6 +206,23 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-25] **El icono se veía borroso en la barra: faltaba el tamaño 24.**
+  El `.ico` se generaba con 16/32/48/64/128/256, y **la barra de tareas normal
+  de Windows pide 24**. Al no encontrarlo, Windows encogía el de 32 por su
+  cuenta con un filtro barato. Medido: **60.3 de definición frente a 123.2** del
+  que se genera directo a 24 y se realza. Justo el doble.
+  **Solución** en `estilo.generar_iconos()`: se guardan los diez tamaños que
+  Windows pide de verdad (16, 20, 24, 32, 40, 48, 64, 96, 128, 256), cada uno
+  generado **desde el original a su medida exacta** con LANCZOS, y con realce de
+  borde (`UnsharpMask`) en los de 64 o menos — un logo con detalle fino se
+  empasta al bajar de 1254 px por mucho filtro que se use. El realce va solo al
+  color, nunca a la transparencia, o saldrían halos.
+  ⚠️ Una prueba falló y **no era el código**: llamaba a `_icono_segun_aire(True)`
+  y luego a `update()`, y el reloj de la ventana volvía a poner el estado real
+  (fuera del aire), que es lo correcto en uso normal. La prueba ahora comprueba
+  el mecanismo sin el reloj de por medio.
+  344 comprobaciones en verde. — Estado: ✅ — Siguiente: probar el puerto 8026.
 
 - [2026-08-25] **Imagen nueva: iconos y carátula regenerados.** El usuario
   cambió `icono.png`. Se rehicieron `icono.ico` y `icono_aire.ico` (el del
