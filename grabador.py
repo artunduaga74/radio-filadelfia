@@ -22,6 +22,7 @@ import subprocess
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 
@@ -41,6 +42,79 @@ def nombre_sugerido(titulo=""):
     limpio = re.sub(r"[^\w\s-]", "", (titulo or "")).strip()
     limpio = re.sub(r"\s+", "_", limpio)[:50]
     return ("%s_%s.mp3" % (sello, limpio)) if limpio else ("programa_%s.mp3" % sello)
+
+
+CANDIDATAS = ("filadelfia broadcaster.png", "portada.png", "icono.png")
+
+
+def portada():
+    """
+    La imagen que se incrusta en las grabaciones, ya lista para meter en un
+    MP3.
+
+    Se convierte una vez a JPEG de 600x600 y se guarda en `datos/portada.jpg`:
+    los reproductores tragan mejor el JPEG que el PNG, y una imagen de 1.7 MB
+    dentro de cada grabacion seria un desperdicio. Si el original cambia, se
+    vuelve a generar.
+    """
+    elegida = (config.get("portada") or "").strip()
+    origen = None
+    if elegida and Path(elegida).exists():
+        origen = Path(elegida)
+    else:
+        for nombre in CANDIDATAS:
+            posible = config.BASE / nombre
+            if posible.exists():
+                origen = posible
+                break
+    if origen is None:
+        return None
+
+    config.asegurar_carpetas()
+    destino = config.CARPETA_DATOS / "portada.jpg"
+    try:
+        if (not destino.exists()
+                or destino.stat().st_mtime < origen.stat().st_mtime):
+            from PIL import Image
+            im = Image.open(origen)
+            if im.mode in ("RGBA", "LA", "P"):
+                im = im.convert("RGBA")
+                fondo = Image.new("RGB", im.size, (255, 255, 255))
+                fondo.paste(im, mask=im.split()[-1])
+                im = fondo
+            else:
+                im = im.convert("RGB")
+            im.thumbnail((600, 600), Image.LANCZOS)
+            im.save(destino, format="JPEG", quality=88)
+        return destino
+    except Exception:
+        return None
+
+
+def etiquetas(titulo=""):
+    """
+    Los datos que van dentro del MP3. Ninguno se deja vacio a proposito: un
+    campo en blanco es lo que hace que los reproductores pongan "Desconocido".
+    """
+    aj = config.cargar()
+    ahora = datetime.now()
+    emisora = (aj.get("nombre_emisora") or "Voz de Filadelfia").strip()
+    autor = (aj.get("autor") or "").strip() or emisora
+    album = (aj.get("album_grabacion") or "").strip() or emisora
+    nombre = (titulo or "").strip() or ("Programa del %s"
+                                        % ahora.strftime("%d-%m-%Y"))
+    datos = {
+        "title": nombre,
+        "artist": autor,
+        "album_artist": autor,
+        "album": album,
+        "genre": (aj.get("genero") or "Christian").strip(),
+        "date": ahora.strftime("%Y-%m-%d"),
+        "TYER": ahora.strftime("%Y"),
+        "comment": (aj.get("url_emisora") or "").strip() or emisora,
+        "encoded_by": "Filadelfia Broadcaster",
+    }
+    return {k: v for k, v in datos.items() if v}
 
 
 class Grabador:
@@ -103,10 +177,25 @@ class Grabador:
             cmd = [FFMPEG, "-hide_banner", "-loglevel", "warning", "-y",
                    "-f", "f32le", "-ar", str(int(aj["muestreo"])),
                    "-ac", str(int(aj["canales"])),
-                   "-thread_queue_size", "512", "-i", "pipe:0",
-                   "-c:a", "libmp3lame",
-                   "-b:a", "%dk" % int(aj.get("bitrate_grabacion", 192)),
-                   "-ar", "44100", "-ac", "2", str(destino)]
+                   "-thread_queue_size", "512", "-i", "pipe:0"]
+
+            # la caratula entra como una segunda entrada, marcada como
+            # "imagen adjunta": asi la ven los reproductores y los telefonos
+            imagen = portada()
+            if imagen is not None:
+                cmd += ["-i", str(imagen)]
+
+            cmd += ["-c:a", "libmp3lame",
+                    "-b:a", "%dk" % int(aj.get("bitrate_grabacion", 192)),
+                    "-ar", "44100", "-ac", "2"]
+            if imagen is not None:
+                cmd += ["-map", "0:a", "-map", "1:v", "-c:v", "copy",
+                        "-disposition:v", "attached_pic",
+                        "-metadata:s:v", "title=Portada",
+                        "-metadata:s:v", "comment=Cover (front)"]
+            for clave, valor in etiquetas(titulo).items():
+                cmd += ["-metadata", "%s=%s" % (clave, valor)]
+            cmd += ["-id3v2_version", "3", "-write_id3v1", "1", str(destino)]
             try:
                 self._proc = procesos.lanzar(cmd, stdin=subprocess.PIPE,
                                              stdout=subprocess.DEVNULL,

@@ -446,6 +446,54 @@ check("y el archivo cae ahi", Path(guardado).parent == elegida,
 check("y existe de verdad", Path(guardado).exists())
 config.guardar({"carpeta_grabaciones": ""})
 
+print("")
+print("=== 20. La grabacion lleva datos y caratula ===")
+config.guardar({"muestreo": FS, "nombre_emisora": "Voz de Filadelfia",
+                "genero": "Christian", "autor": "Fernando Erick Miranda",
+                "url_emisora": "https://vozdefiladelfia.com",
+                "carpeta_grabaciones": ""})
+tapa = mod_grabador.portada()
+check("encuentra la imagen de portada", tapa is not None and Path(tapa).exists(),
+      Path(tapa).name if tapa else "no hay")
+
+et = mod_grabador.etiquetas("Porque volver a Filadelfia")
+for campo in ("title", "artist", "album", "genre", "date"):
+    check("la etiqueta '%s' va rellena" % campo, bool(et.get(campo)),
+          str(et.get(campo))[:30])
+check("el autor es el configurado", et["artist"] == "Fernando Erick Miranda")
+sin_titulo = mod_grabador.etiquetas("")
+check("sin titulo se pone la fecha, no queda vacio",
+      bool(sin_titulo.get("title")) and "Programa" in sin_titulo["title"],
+      sin_titulo.get("title", ""))
+
+g4 = mod_grabador.Grabador()
+g4.iniciar("Porque volver a Filadelfia")
+sil = np.zeros((1024, 2), dtype=np.float32)
+for _ in range(25):
+    g4.recibir(sil)
+    time.sleep(1024.0 / FS)
+arch = g4.detener()
+time.sleep(0.4)
+
+r = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json",
+                    "-show_format", "-show_streams", str(arch)],
+                   capture_output=True, creationflags=procesos.SIN_VENTANA)
+d = json.loads(r.stdout.decode("utf-8", "replace"))
+tags = {k.lower(): v for k, v in (d.get("format", {}).get("tags") or {}).items()}
+check("el MP3 lleva el titulo dentro", tags.get("title") == "Porque volver a Filadelfia",
+      tags.get("title", "(nada)"))
+check("y el autor", tags.get("artist") == "Fernando Erick Miranda",
+      tags.get("artist", "(nada)"))
+check("y el album", bool(tags.get("album")), tags.get("album", "(nada)"))
+check("y el genero", bool(tags.get("genre")), tags.get("genre", "(nada)"))
+check("ningun campo dice Desconocido",
+      not any("desconocid" in str(v).lower() for v in tags.values()))
+imagenes = [st for st in d.get("streams", [])
+            if st.get("codec_type") == "video"
+            and st.get("disposition", {}).get("attached_pic")]
+check("lleva la caratula pegada", len(imagenes) == 1,
+      "%dx%d" % (imagenes[0]["width"], imagenes[0]["height"]) if imagenes else "no")
+
 print("\n" + "=" * 62)
 print("  %d comprobaciones OK, %d fallos" % (ok, len(fallos)))
 if fallos:

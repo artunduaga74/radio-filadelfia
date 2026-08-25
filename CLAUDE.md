@@ -106,7 +106,7 @@ eq.py              cadena de voz: ecualizador, compresor, puerta y limitador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           302 comprobaciones automáticas (5 archivos)
+pruebas/           314 comprobaciones automáticas (5 archivos)
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -157,6 +157,34 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
 
 ## 6. Estado y qué sigue
 
+### ⚡ PARA RETOMAR EN UNA SESIÓN NUEVA — leer esto primero
+
+**La aplicación está terminada y funcionando en producción.** Emite de verdad a
+`cast1.asurahosting.com`, el usuario ya la ha usado al aire. El repositorio está
+en GitHub (`artunduaga74/radio-filadelfia`, privado) y al día.
+
+**Cómo trabajar aquí:**
+1. Las pruebas son la red de seguridad: `python pruebas/prueba_*.py`, cinco
+   archivos, **314 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
+   nada, y **vigilar que el número no baje** — un descenso silencioso ha
+   delatado ya tres parches que no se habían aplicado.
+2. Todo lo de audio se **mide** (dB, LUFS, espectro), no se estima. Hay
+   ejemplos en `pruebas/prueba_eq_grabador.py`.
+3. Antes de buscar un fallo en el código, **mirar `ajustes.json`**: dos "bugs"
+   reportados eran configuración del usuario, no código.
+4. ⚠️ Los parches con scripts que llevan `
+` dentro de cadenas **fallan en
+   silencio** en este entorno (se convierte en salto de línea real). Usar
+   coincidencia por líneas y comprobar el resultado.
+
+**Lo único pendiente de decisión del usuario:**
+- Poner el **volumen de emisión en +3 dB** y volver a medir con
+  `ffmpeg -i <stream> -af ebur128` (iba a −18.9 LUFS; el objetivo es −16).
+- El **MP3 de 4.4 MB que se coló** en los primeros commits sigue en el
+  historial. Repositorio privado, sin consecuencias; limpiarlo exige reescribir
+  el historial y forzar el envío. **No hacerlo sin que él lo pida.**
+
+
 **Hecho y probado (2026-08-24):** los 11 módulos, **94 comprobaciones en
 verde** (52 del motor, 39 del emisor/ICY, 49 del ecualizador/compresor/grabador, 13
 del monitor de aire, 112 de la ventana). Todo lo de audio se mide: dB reales, no "parece que suena".
@@ -178,6 +206,28 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-24] **Metadatos con carátula en las grabaciones y corte automático.**
+  **(1) Las grabaciones ya no dicen "Desconocido".** `grabador.etiquetas()`
+  rellena título, artista, artista del álbum, álbum, género, fecha y comentario;
+  ningún campo se deja vacío (un campo vacío es justo lo que hace que los
+  reproductores pongan "Desconocido"). Sin título de programa, se pone
+  "Programa del DD-MM-AAAA". Autor: **Fernando Erick Miranda**, configurable en
+  `autor`. **Carátula:** `grabador.portada()` busca `filadelfia broadcaster.png`
+  (o `portada.png`/`icono.png`) en la carpeta de la app, la convierte **una vez**
+  a JPEG de 600×600 en `datos/portada.jpg` —los reproductores tragan mejor JPEG,
+  y meter 1.7 MB en cada grabación sería un desperdicio— y la incrusta como
+  `attached_pic`. Verificado con ffprobe sobre un MP3 real: las nueve etiquetas
+  puestas y la imagen dentro.
+  **(2) Corte automático al acabar la lista.** Si "Repetir" está quitado y la
+  lista se termina, se cierra la grabación, se corta la emisión y la emisora
+  vuelve a su programación. Casilla **"Cortar al final"** junto a Repetir
+  (`cortar_al_terminar`). Sirve para dejar un bloque programado e irse.
+  **(3) autoDJ:** comprobado que sus puertos 8026/8027 vuelven a estar abiertos,
+  o sea que lo tiene encendido. **No hace falta apagarlo**: emitiendo al 8026 el
+  harbor de Liquidsoap toma la fuente en vivo y devuelve la programación solo al
+  desconectar. Queda que él lo pruebe cambiando el puerto a 8026.
+  314 comprobaciones en verde. — Estado: ✅ — Siguiente: probar el 8026.
 
 - [2026-08-24] **Carpeta de grabaciones configurable + repositorio subido.**
   Nuevo `config.carpeta_graba()`: si el usuario elige una carpeta, esa; si la

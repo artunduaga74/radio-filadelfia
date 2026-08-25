@@ -130,6 +130,11 @@ DEFECTOS = {
 
     # --- grabacion
     "bitrate_grabacion": 192,
+    # Datos que se graban dentro del MP3, para que ningun reproductor diga
+    # "Desconocido". La portada se busca sola en la carpeta de la aplicacion.
+    "autor": "Fernando Erick Miranda",
+    "album_grabacion": "",          # en blanco = el nombre de la emisora
+    "portada": "",                  # en blanco = filadelfia broadcaster.png
 
     "carpeta_musica": "",
     # Donde se guardan las grabaciones. En blanco = la carpeta "grabaciones"
@@ -139,6 +144,9 @@ DEFECTOS = {
     "cortinas": [None, None, None, None],        # el audio de cada boton
     "cortinas_nombres": ["", "", "", ""],        # como se lee cada boton
     "grabar_al_aire": False,    # la grabacion tiene su propio boton
+    # Al acabarse la lista SIN repetir: cortar la transmision sola. Sirve para
+    # dejar programado un bloque y que la emisora vuelva al autoDJ al terminar.
+    "cortar_al_terminar": True,
 
     # --- comportamiento
     "reconectar": True,

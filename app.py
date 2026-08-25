@@ -348,6 +348,16 @@ class App(tk.Tk):
 
         self.var_repetir = tk.BooleanVar(value=True)
         self.var_mezclar = tk.BooleanVar(value=False)
+        self.var_cortar = tk.BooleanVar(
+            value=bool(config.get("cortar_al_terminar", True)))
+        c_cortar = ttk.Checkbutton(herr, text="Cortar al final",
+                                   variable=self.var_cortar,
+                                   style="Caja.TCheckbutton",
+                                   command=self._aplicar_modo_lista)
+        c_cortar.pack(side="right", padx=(px(6), 0))
+        Consejo(c_cortar, "Sin 'Repetir', al acabarse la lista se corta la "
+                          "transmision sola y la emisora vuelve a su "
+                          "programacion automatica.")
         ttk.Checkbutton(herr, text="Repetir", variable=self.var_repetir,
                         style="Caja.TCheckbutton",
                         command=self._aplicar_modo_lista).pack(side="right")
@@ -853,9 +863,34 @@ class App(tk.Tk):
     def siguiente_pista(self):
         pista = self.lista.siguiente()
         if not pista:
-            self.mensaje("La lista se acabo.")
+            self._fin_de_lista()
             return
         self._poner_pista(pista)
+
+    def _fin_de_lista(self):
+        """
+        Se acabo la lista y no esta puesto "Repetir".
+
+        Si asi se pidio, se corta la transmision sola: es la forma de dejar
+        programado un bloque, irse, y que la emisora vuelva al autoDJ al
+        terminar sin que nadie tenga que estar delante.
+        """
+        self.btn_play.configure(text=ICO_PLAY)
+        if not config.get("cortar_al_terminar", True):
+            self.mensaje("La lista se acabo.")
+            return
+        if self.grabador.grabando:
+            archivo = self.grabador.detener()
+            self._pintar_grabacion()
+            if archivo:
+                self._anotar("grabacion cerrada al acabar la lista: %s" % archivo)
+        if self.emisor.al_aire or self.emisor.estado == mod_emisor.CONECTANDO:
+            self.emisor.detener()
+            self.mezclador.detener()
+            self.mensaje("La lista se acabo: transmision cortada. "
+                         "La emisora vuelve a su programacion.")
+        else:
+            self.mensaje("La lista se acabo.")
 
     def _poner_pista(self, pista):
         if not self.mezclador.corriendo:
@@ -1125,6 +1160,7 @@ class App(tk.Tk):
     def _aplicar_modo_lista(self):
         self.lista.repetir = self.var_repetir.get()
         self.lista.mezclar = self.var_mezclar.get()
+        config.guardar({"cortar_al_terminar": self.var_cortar.get()})
 
     def guardar_lista(self):
         ruta = filedialog.asksaveasfilename(
