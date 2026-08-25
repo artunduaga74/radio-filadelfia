@@ -44,7 +44,10 @@ def nombre_sugerido(titulo=""):
     return ("%s_%s.mp3" % (sello, limpio)) if limpio else ("programa_%s.mp3" % sello)
 
 
-CANDIDATAS = ("filadelfia broadcaster.png", "portada.png", "icono.png")
+# Por orden de preferencia. `icono.png` va PRIMERO a proposito: es el que el
+# usuario cambia cuando quiere cambiar la imagen de la aplicacion, y lo normal
+# es que la caratula de las grabaciones sea esa misma.
+CANDIDATAS = ("icono.png", "portada.png", "filadelfia broadcaster.png")
 
 
 def portada():

@@ -207,6 +207,18 @@ gate pase, no dar por funcionando la emisión.
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
 
+- [2026-08-25] **Imagen nueva: iconos y carátula regenerados.** El usuario
+  cambió `icono.png`. Se rehicieron `icono.ico` y `icono_aire.ico` (el del
+  punto rojo) y la carátula `datos/portada.jpg`. Comprobado a 16 px: 91 de 256
+  píxeles cambian y 37 son rojos, así que la versión "al aire" se sigue
+  distinguiendo en la barra de tareas.
+  ⚠️ **Cambio de criterio en `grabador.CANDIDATAS`:** ahora `icono.png` va
+  PRIMERO. Antes mandaba `filadelfia broadcaster.png`, que se había quedado en
+  la carpeta con la imagen VIEJA: las grabaciones habrían seguido llevando la
+  carátula antigua aunque él hubiera cambiado el icono. Lo natural es que la
+  carátula sea la imagen de la aplicación.
+  339 comprobaciones en verde. — Estado: ✅ — Siguiente: probar el puerto 8026.
+
 - [2026-08-24] **Icono propio en la barra de tareas, y en rojo al aire.**
   Al usuario le salía **el icono de Python** en la barra de tareas. Causa:
   Windows agrupa las ventanas por una *AppUserModelID*, y la de un script de
