@@ -1,0 +1,430 @@
+<title>Manual de Filadelfia Broadcaster</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+  /* ---- paleta clara (la de fábrica) ---------------------------------- */
+  :root {
+    --ground:      #f4f5f7;
+    --surface:     #ffffff;
+    --sunken:      #eceef2;
+    --line:        #d6dae1;
+    --ink:         #1a1f27;
+    --ink-soft:    #5c6675;
+    --amber:       #a86b1c;   /* lo que se toca */
+    --amber-soft:  #f3e6d2;
+    --onair:       #c0392b;   /* SOLO para estar al aire */
+    --onair-soft:  #f8e4e1;
+    --shadow:      0 1px 2px rgba(26,31,39,.06), 0 8px 24px rgba(26,31,39,.05);
+    --measure: 66ch;
+  }
+  /* ---- paleta oscura: el estudio de noche, como la propia app --------- */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:     #12161c;
+      --surface:    #1b212a;
+      --sunken:     #0d1116;
+      --line:       #333d4b;
+      --ink:        #e6ebf2;
+      --ink-soft:   #8a95a5;
+      --amber:      #e0a458;
+      --amber-soft: #2a2418;
+      --onair:      #ef5a4e;
+      --onair-soft: #2c1a19;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:     #12161c;
+    --surface:    #1b212a;
+    --sunken:     #0d1116;
+    --line:       #333d4b;
+    --ink:        #e6ebf2;
+    --ink-soft:   #8a95a5;
+    --amber:      #e0a458;
+    --amber-soft: #2a2418;
+    --onair:      #ef5a4e;
+    --onair-soft: #2c1a19;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    font-size: 16.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .hoja {
+    max-width: 74ch;
+    margin: 0 auto;
+    padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1.1rem, 4vw, 2rem) 5rem;
+  }
+
+  /* ---- cabecera ------------------------------------------------------ */
+  header { padding-bottom: 1.75rem; border-bottom: 2px solid var(--ink); }
+  .marca {
+    display: flex; align-items: baseline; gap: .6rem;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .72rem; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .luz {
+    width: .5rem; height: .5rem; border-radius: 50%;
+    background: var(--onair); align-self: center;
+  }
+  h1 {
+    font-family: Archivo, system-ui, sans-serif;
+    font-weight: 700; font-size: clamp(2.1rem, 6vw, 3.1rem);
+    line-height: 1.04; letter-spacing: -.022em;
+    margin: .5rem 0 .4rem; text-wrap: balance;
+  }
+  .entrada { color: var(--ink-soft); max-width: var(--measure); margin: 0; }
+
+  /* ---- secciones ----------------------------------------------------- */
+  section { margin-top: 3.25rem; }
+  h2 {
+    font-family: Archivo, system-ui, sans-serif;
+    font-weight: 600; font-size: 1.42rem; letter-spacing: -.012em;
+    margin: 0 0 .9rem; text-wrap: balance;
+    padding-bottom: .45rem; border-bottom: 1px solid var(--line);
+  }
+  h3 {
+    font-family: Archivo, system-ui, sans-serif;
+    font-weight: 600; font-size: 1.02rem; letter-spacing: .002em;
+    margin: 1.9rem 0 .35rem;
+  }
+  p, ul, ol { max-width: var(--measure); }
+  p { margin: 0 0 1rem; }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.2rem; }
+  li { margin-bottom: .38rem; }
+  li::marker { color: var(--amber); }
+  strong { font-weight: 600; }
+  em { color: var(--ink-soft); }
+
+  /* ---- pasos numerados: aquí el orden SÍ es información -------------- */
+  .pasos { list-style: none; padding: 0; counter-reset: paso; }
+  .pasos > li {
+    counter-increment: paso;
+    position: relative; padding-left: 3rem; margin-bottom: 1.4rem;
+  }
+  .pasos > li::before {
+    content: counter(paso);
+    position: absolute; left: 0; top: -.1rem;
+    width: 2rem; height: 2rem; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--amber-soft); color: var(--amber);
+    border: 1px solid var(--amber);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .85rem; font-weight: 600;
+  }
+  .pasos h3 { margin: 0 0 .2rem; }
+
+  /* ---- tarjetas y avisos --------------------------------------------- */
+  .caja {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 1.1rem 1.25rem;
+    margin: 1.25rem 0; box-shadow: var(--shadow);
+  }
+  .caja > :last-child { margin-bottom: 0; }
+  .caja h3 { margin-top: 0; }
+
+  .aire {
+    border-left: 3px solid var(--onair);
+    background: var(--onair-soft);
+    border-radius: 0 8px 8px 0;
+    padding: .9rem 1.1rem; margin: 1.25rem 0;
+  }
+  .aire > :last-child { margin-bottom: 0; }
+  .aire .rotulo {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .68rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--onair); font-weight: 600; display: block; margin-bottom: .3rem;
+  }
+
+  /* ---- tablas -------------------------------------------------------- */
+  .tabla-envoltura { overflow-x: auto; margin: 1.1rem 0 1.4rem; }
+  table {
+    width: 100%; border-collapse: collapse; font-size: .93rem;
+    font-variant-numeric: tabular-nums;
+  }
+  th {
+    text-align: left; font-family: "IBM Plex Mono", monospace;
+    font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-soft); font-weight: 600;
+    padding: 0 .9rem .5rem 0; border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td {
+    padding: .62rem .9rem .62rem 0;
+    border-bottom: 1px solid var(--line); vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  /* ---- teclas y valores ---------------------------------------------- */
+  kbd {
+    font-family: "IBM Plex Mono", monospace; font-size: .8rem; font-weight: 600;
+    background: var(--sunken); color: var(--ink);
+    border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 5px; padding: .12rem .45rem; white-space: nowrap;
+  }
+  code {
+    font-family: "IBM Plex Mono", monospace; font-size: .87em;
+    background: var(--sunken); border-radius: 4px; padding: .08em .34em;
+  }
+  .ruta { color: var(--amber); font-weight: 600; white-space: nowrap; }
+
+  footer {
+    margin-top: 4rem; padding-top: 1.25rem; border-top: 1px solid var(--line);
+    color: var(--ink-soft); font-size: .87rem;
+  }
+  a { color: var(--amber); }
+  a:focus-visible, kbd:focus-visible {
+    outline: 2px solid var(--amber); outline-offset: 2px;
+  }
+</style>
+
+<div class="hoja">
+
+<header>
+  <div class="marca"><span class="luz"></span> Voz de Filadelfia · Estudio</div>
+  <h1>Manual de Filadelfia Broadcaster</h1>
+  <p class="entrada">Lo que hace falta saber para sentarse, abrir el micrófono
+  y salir al aire. Escrito para tenerlo al lado la primera vez.</p>
+</header>
+
+<section>
+  <h2>Salir al aire</h2>
+
+  <ol class="pasos">
+    <li>
+      <h3>Abre la aplicación</h3>
+      <p>Doble clic en <span class="ruta">Estudio.bat</span>, dentro de la
+      carpeta del programa. La ventana se abre con la lista de reproducción a
+      la izquierda y la mesa a la derecha.</p>
+    </li>
+    <li>
+      <h3>Escribe qué vas a poner</h3>
+      <p>En la fila <strong>Al aire</strong> del reproductor: el título del
+      programa y quién lo presenta. Pulsa <strong>Poner</strong> y eso es lo
+      que verán los oyentes en la radio.</p>
+    </li>
+    <li>
+      <h3>Pulsa el botón rojo</h3>
+      <p><strong>SALIR AL AIRE</strong>, arriba a la derecha. Cuando conecte,
+      el reloj empieza a correr y el ícono de la barra de tareas se pone con un
+      punto rojo: así sabes que estás emitiendo aunque tengas otra ventana
+      delante.</p>
+    </li>
+  </ol>
+
+  <div class="aire">
+    <span class="rotulo">Para cortar</span>
+    <p>El mismo botón, que ahora dice <strong>CORTAR</strong>. Te pregunta
+    antes. Al soltar el aire, la emisora vuelve sola a su programación.</p>
+  </div>
+</section>
+
+<section>
+  <h2>La mesa</h2>
+
+  <p>Cada fila es una fuente de sonido, con su botón para abrirla, su medidor y
+  su volumen. Lo que ves en <strong>AL AIRE</strong>, abajo, es la suma de
+  todo: lo que están oyendo.</p>
+
+  <h3>Micrófonos</h3>
+  <p>Hay cuatro canales. El primero es el tuyo; los demás, para invitados. Cada
+  uno con su aparato, su volumen y su propio ecualizador — la voz de un
+  invitado casi nunca necesita el mismo ajuste que la tuya.</p>
+  <p>Se abren con su botón, con <kbd>Ctrl</kbd>+<kbd>1</kbd> …
+  <kbd>Ctrl</kbd>+<kbd>4</kbd>, o el primero con la
+  <kbd>barra espaciadora</kbd>. Cuando uno está abierto, se pone rojo.</p>
+
+  <h3>Música</h3>
+  <p>Añade con <strong>+ Archivos</strong> o <strong>+ Carpeta</strong>. Doble
+  clic en una pista para ponerla. El deslizador de posición se arrastra para ir
+  a otro minuto.</p>
+  <p>Con <strong>Repetir</strong> marcado la lista da vueltas. Sin marcar, y
+  con <strong>Cortar al final</strong> puesto, al acabarse la lista se corta la
+  transmisión sola: sirve para dejar un bloque programado e irte.</p>
+
+  <h3>Cortinas</h3>
+  <p>Los cuatro botones de abajo. <strong>Clic</strong> para lanzar una encima
+  de lo que suene; <strong>clic derecho</strong> para asignarle un audio,
+  cambiarle el nombre o quitarla.</p>
+
+  <h3>Bajar la música al hablar</h3>
+  <p>Con la casilla marcada, la música se aparta sola en cuanto abres
+  cualquier micrófono y vuelve al cerrarlo. Si la quitas, en vez de bajar la
+  música se <em>pausa</em> mientras hablas.</p>
+</section>
+
+<section>
+  <h2>Grabar el programa</h2>
+
+  <p>El botón <strong>Grabar</strong> (o <kbd>F2</kbd>) es independiente de
+  estar al aire. Puedes poner música de fondo sin grabarla y empezar a grabar
+  cuando arranque el programa de verdad.</p>
+
+  <p>Mientras graba, el botón se pone rojo y lleva la cuenta del tiempo. Los
+  archivos salen en MP3 con la carátula y los datos dentro, así que ningún
+  reproductor dice «Desconocido».</p>
+
+  <div class="caja">
+    <h3>Dónde va cada dato</h3>
+    <p>Hay dos sitios y conviene no confundirlos:</p>
+    <ul>
+      <li><strong>En el reproductor</strong> — lo de hoy: el título del
+      programa y quién lo presenta. Va a la radio <em>y</em> a la grabación.</li>
+      <li><strong>En Configuración → Transmisión</strong> — lo que no cambia:
+      tu nombre habitual, el álbum o temporada, el género y la carátula. Solo
+      afecta a las grabaciones.</li>
+    </ul>
+    <p>Ahí mismo hay una vista previa de cómo se verá el programa en un
+    reproductor.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Atajos</h2>
+
+  <div class="tabla-envoltura">
+    <table>
+      <thead>
+        <tr><th>Tecla</th><th>Qué hace</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><kbd>barra espaciadora</kbd></td><td>Abrir y cerrar tu micrófono</td></tr>
+        <tr><td><kbd>F1</kbd></td><td>Lo mismo, siempre, elijas lo que elijas en Configuración</td></tr>
+        <tr><td><kbd>F2</kbd></td><td>Empezar o parar la grabación</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>4</kbd></td><td>Abrir cada micrófono</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>→</kbd></td><td>Siguiente pista</td></tr>
+        <tr><td>Doble clic en la lista</td><td>Reproducir esa pista</td></tr>
+        <tr><td>Clic derecho en una cortina</td><td>Asignarla o renombrarla</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Mientras escribes en un campo, los atajos no actúan: puedes teclear el
+  título del programa sin miedo a abrir el micrófono.</p>
+</section>
+
+<section>
+  <h2>Vigilar la emisora</h2>
+
+  <p>El panel <strong>OYENTES</strong> muestra cuánta gente hay ahora, el pico
+  y la curva de las últimas horas. En <strong>Ver → Estadísticas</strong> están
+  los picos y promedios por día.</p>
+
+  <p><strong>Ver → Monitor de aire</strong> abre una ventanita que puedes dejar
+  siempre visible en una esquina. No le pregunta al servidor si está en línea:
+  <em>escucha la emisora y mide el sonido</em>. Por eso detecta el fallo más
+  peligroso — que la señal siga conectada pero mandando silencio.</p>
+
+  <div class="aire">
+    <span class="rotulo">Ojo</span>
+    <p>Mientras esa ventana está abierta cuenta como un oyente y gasta el ancho
+    de banda de uno. Ciérrala cuando no la necesites.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Si algo va mal</h2>
+
+  <div class="tabla-envoltura">
+    <table>
+      <thead>
+        <tr><th>Pasa esto</th><th>Mira esto</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>«Usuario o clave rechazados»</td>
+          <td>Son los de una <strong>Cuenta de DJ</strong> del panel de Centova,
+          no los de entrar al panel. Si no aciertas, cierra la app y ejecuta
+          <code>python prueba_conexion.py</code>: los busca solo.</td>
+        </tr>
+        <tr>
+          <td>No se oye el micrófono</td>
+          <td>Configuración → Audio, comprueba qué aparato tiene asignado.
+          Cambiar de micrófono exige volver a salir al aire.</td>
+        </tr>
+        <tr>
+          <td>No oyes nada por los auriculares</td>
+          <td>Configuración → Audio → <strong>Probar los auriculares</strong>.
+          Ahí mismo se elige el aparato y su volumen; los botones de volumen de
+          Windows no llegan a esta salida.</td>
+        </tr>
+        <tr>
+          <td>Un pitido que va subiendo</td>
+          <td>Es acople: el micrófono se oye a sí mismo. Marca
+          <strong>Callar los auriculares mientras el micrófono esté abierto</strong>.
+          Con audífonos de cabeza no hace falta.</td>
+        </tr>
+        <tr>
+          <td>Un zumbido grave de fondo</td>
+          <td>Es la red eléctrica colándose por el cable. Configuración →
+          Micrófono → <strong>Quitar zumbido: 60 Hz</strong>.</td>
+        </tr>
+        <tr>
+          <td>Te oyes con eco al hablar</td>
+          <td>Configuración → Audio → <strong>Retraso al oírte</strong>, ponlo
+          en «Corto». Si tu micrófono tiene salida de auriculares propia,
+          úsala: eso no tiene retraso ninguno.</td>
+        </tr>
+        <tr>
+          <td>Se cortó y volvió solo</td>
+          <td>Es la reconexión automática. El detalle está en
+          <strong>Ver → Registro técnico</strong>.</td>
+        </tr>
+        <tr>
+          <td>La app no abre y no dice nada</td>
+          <td>Mira el archivo <span class="ruta">error_arranque.log</span> en la
+          carpeta del programa.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Los datos de tu emisora</h2>
+
+  <div class="tabla-envoltura">
+    <table>
+      <thead>
+        <tr><th>Dato</th><th>Valor</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Servidor</td><td><code>cast1.asurahosting.com</code></td></tr>
+        <tr><td>Puerto</td><td><code>8024</code> directo · <code>8026</code> por el autoDJ</td></tr>
+        <tr><td>Protocolo</td><td>SHOUTcast v1</td></tr>
+        <tr><td>Usuario y clave</td><td>Los de una Cuenta de DJ</td></tr>
+        <tr><td>Calidad</td><td>128 kbps · hasta 120 oyentes</td></tr>
+        <tr><td>Se escucha en</td><td><code>http://cast1.asurahosting.com:8024/stream</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="caja">
+    <h3>Los dos caminos</h3>
+    <p>Con el puerto <strong>8026</strong> sales <em>a través del autoDJ</em>:
+    él te cede el aire al conectar y lo recupera al colgar, sin que tengas que
+    apagarlo. Con el <strong>8024</strong> vas directo al servidor, sin pasar
+    por él — pero entonces, cuando no transmites, la emisora queda en
+    silencio.</p>
+  </div>
+</section>
+
+<footer>
+  <p>Filadelfia Broadcaster · escrito el 25 de agosto de 2026<br>
+  El detalle técnico y el historial de cambios están en
+  <span class="ruta">CLAUDE.md</span>, dentro de la carpeta del programa.</p>
+</footer>
+
+</div>
