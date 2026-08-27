@@ -801,6 +801,17 @@ class App(tk.Tk):
         self.lbl_oyentes_pico.configure(
             text="pico %d  ·  tope del plan %d" % (est["pico"], est["maximo"]))
         self.lbl_sonando_srv.configure(text=est["titulo"][:60])
+
+        # Los rotulos de arriba se refrescan cada segundo porque no cuestan
+        # nada. La GRAFICA no: pedirla obliga a abrir una conexion nueva a la
+        # base y a consultar las ultimas dos horas (medido: 1.84 ms), mas el
+        # redibujo del lienzo. Y no tiene ningun sentido hacerlo 15 veces por
+        # cada dato nuevo, porque el servidor solo se sondea cada 15 s. Asi
+        # que se dibuja SOLO cuando el sondeo trae algo que no se ha pintado.
+        momento = est.get("momento")
+        if momento == getattr(self, "_grafica_pintada", None):
+            return
+        self._grafica_pintada = momento
         datos = [c for _, c in self.historial.ultimos(120)]
         self.grafico.pintar(datos[-160:])
 

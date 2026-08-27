@@ -660,6 +660,57 @@ a.mezclador.aplicar_ajustes()
 check("los faders llegan al mezclador", abs(a.mezclador.vol_musica - 0.55) < 0.01,
       "%.2f" % a.mezclador.vol_musica)
 
+print("")
+print("=== La grafica de oyentes no trabaja en balde ===")
+# `_pintar_oyentes` corre CADA SEGUNDO, pero el servidor solo se sondea cada
+# 15 s. Antes pedia a la base las ultimas dos horas y redibujaba el lienzo en
+# cada tic: 15 veces de mas por cada dato nuevo, 1.84 ms cada una.
+consultas = [0]
+dibujos = [0]
+_ultimos, _pintar = a.historial.ultimos, a.grafico.pintar
+
+
+def _cuenta_consulta(*args, **kw):
+    consultas[0] += 1
+    return _ultimos(*args, **kw)
+
+
+def _cuenta_dibujo(*args, **kw):
+    dibujos[0] += 1
+    return _pintar(*args, **kw)
+
+
+a.historial.ultimos = _cuenta_consulta
+a.grafico.pintar = _cuenta_dibujo
+
+
+def _sondeo(oyentes, momento):
+    return {"en_linea": True, "oyentes": oyentes, "pico": oyentes,
+            "maximo": 120, "unicos": oyentes, "titulo": "prueba",
+            "bitrate": 128, "uptime": 0, "dj": "", "emisora": "",
+            "error": "", "momento": momento}
+
+
+TICS = 120                      # dos minutos de reloj
+for tic in range(TICS):
+    a.vigilante.ultimo = _sondeo(3, 1000 + tic // 15)   # dato nuevo cada 15 s
+    a._pintar_oyentes()
+
+check("solo consulta la base cuando hay dato nuevo", consultas[0] <= 10,
+      "%d consultas en %d tics" % (consultas[0], TICS))
+check("y solo redibuja entonces", dibujos[0] <= 10,
+      "%d redibujos en %d tics" % (dibujos[0], TICS))
+check("pero los rotulos siguen al dia cada segundo",
+      a.lbl_oyentes.cget("text") == "3" and
+      a.lbl_sonando_srv.cget("text") == "prueba",
+      a.lbl_oyentes.cget("text"))
+# y si de verdad llega un dato nuevo, se dibuja: no vale con no dibujar nunca
+antes = dibujos[0]
+a.vigilante.ultimo = _sondeo(7, 99999)
+a._pintar_oyentes()
+check("con un dato nuevo si redibuja", dibujos[0] == antes + 1)
+a.historial.ultimos, a.grafico.pintar = _ultimos, _pintar
+
 print("\n=== Cierre limpio ===")
 a.vigilante.detener()
 a.emisor.detener()

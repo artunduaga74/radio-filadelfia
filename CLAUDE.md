@@ -108,7 +108,7 @@ monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
 metadatos.py       leer y escribir las etiquetas de un archivo ya grabado
 ventana_metadatos.py  el editor de metadatos (menú Metadatos)
-pruebas/           461 comprobaciones automáticas (7 archivos)
+pruebas/           465 comprobaciones automáticas (7 archivos)
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -191,7 +191,7 @@ en GitHub (`artunduaga74/radio-filadelfia`, privado) y al día.
 
 **Cómo trabajar aquí:**
 1. Las pruebas son la red de seguridad: `python pruebas/prueba_*.py`, siete
-   archivos, **461 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
+   archivos, **465 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
    nada, y **vigilar que el número no baje** — un descenso silencioso ha
    delatado ya tres parches que no se habían aplicado.
 2. Todo lo de audio se **mide** (dB, LUFS, espectro), no se estima. Hay
@@ -248,6 +248,25 @@ gate pase, no dar por funcionando la emisión.
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
 
+- [2026-08-25] **La gráfica de oyentes dejó de trabajar en balde.**
+  Salía de la investigación de arriba. `_pintar_oyentes()` corre **cada
+  segundo** (lo llama `_tic_lento`), pero el servidor solo se sondea **cada
+  15 s**: se estaba pidiendo a SQLite las últimas dos horas y redibujando el
+  lienzo **quince veces por cada dato nuevo**. Ahora los rótulos (oyentes, pico,
+  título) siguen refrescándose cada segundo, que es gratis, y la consulta y el
+  redibujo **solo ocurren cuando el sondeo trae un `momento` que no se ha
+  pintado**.
+  Medido sobre 120 tics (dos minutos de aplicación) con 8 sondeos reales:
+  **8 consultas y 8 redibujos en vez de 120** — un 93 % menos — con los rótulos
+  igual de al día. Ahorro: ~6 s de CPU por hora.
+  La prueba comprueba las dos direcciones: que NO trabaje de más, y que con un
+  dato nuevo **sí** redibuje (si no, "no dibujar nunca" también pasaría).
+  ⚠️ Ojo con `prueba_ventana.py`: la comprobación "el vúmetro del micro se
+  enciende" es **intermitente** — depende del micrófono real del equipo. Falló
+  una vez y pasó las dos siguientes sin tocar nada. Si aparece, repetir antes de
+  buscarle una causa.
+  465 comprobaciones. — Estado: ✅
+
 - [2026-08-25] **Parar/reproducir trabado, botones del reproductor y SOUNDPAD.**
   **(1) BUG: tras "Parar", el play no hacía nada.** `Pista.detener()` mata el
   ffmpeg de la pista pero **deja la ruta puesta**, y `reproducir()` empezaba con
@@ -291,13 +310,10 @@ gate pase, no dar por funcionando la emisión.
   incluido que se ralentizara *el internet* y que *reiniciar lo arreglara*, que
   es justo lo que hace un reinicio: liberar paginación y temporales. Una sesión
   de 2 h grabando escribe además ~0.3 GB, apretando más.
-  **Ineficiencia real encontrada, menor:** `_pintar_oyentes()` corre **cada
-  segundo** y abre una conexión SQLite nueva cada vez (`_conex()`, con su
-  `PRAGMA journal_mode=WAL`) para consultar las últimas 2 horas. Medido:
-  **1.84 ms por consulta**, o sea ~6.6 s de CPU por hora tirados. No explica
-  por sí solo lo que le pasó, pero sobra: el gráfico no necesita redibujarse más
-  de una vez cada 10-15 s (que es cada cuánto llega un dato nuevo). **Pendiente
-  de arreglar.**
+  **Ineficiencia real encontrada, menor — ✅ YA ARREGLADA (ver entrada de
+  abajo):** `_pintar_oyentes()` corría **cada segundo** y abría una conexión
+  SQLite nueva cada vez para consultar las últimas 2 horas (**1.84 ms**), más el
+  redibujo del lienzo. No explica por sí solo lo que le pasó, pero sobraba.
   **Lo que NO se ha probado y haría falta para concluir:** una sesión larga con
   el camino REAL (mezclador + emisor + grabador a la vez), midiendo RAM, hilos y
   CPU. Sin eso no se puede afirmar que la aplicación esté limpia bajo carga.
