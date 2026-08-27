@@ -36,7 +36,11 @@ import servidor
 import ventana_aire
 from estilo import Consejo, px
 
-TITULO = "Filadelfia Broadcaster"
+VERSION = "1.0"
+# El titulo lleva la version: es lo que se lee al pasar el raton por la
+# barra de tareas y en el conmutador de ventanas, asi que de un vistazo se
+# sabe que version corre en cada ordenador.
+TITULO = "Filadelfia Broadcaster %s" % VERSION
 
 # como se llaman los protocolos en pantalla
 CORTINAS = 8              # cuantos botones tiene el soundpad
@@ -241,6 +245,8 @@ class App(tk.Tk):
 
         m = tk.Menu(barra, tearoff=0)
         m.add_command(label="Atajos de teclado", command=self.ver_atajos)
+        m.add_separator()
+        m.add_command(label="Acerca de...", command=self.acerca_de)
         barra.add_cascade(label="Ayuda", menu=m)
 
         self.config(menu=barra)
@@ -1502,6 +1508,20 @@ class App(tk.Tk):
         for f in filas:
             tabla.insert("", "end", values=f)
         tabla.pack(fill="both", expand=True, padx=px(10), pady=px(8))
+
+    def acerca_de(self):
+        """Quien es este programa y que version corre en este ordenador."""
+        messagebox.showinfo(
+            "Acerca de",
+            "Filadelfia Broadcaster" + SALTO + "Version " + VERSION + SALTO * 2
+            + "Estudio en vivo de la Voz de Filadelfia." + SALTO
+            + "Mezcla microfonos, musica y soundpad, saca la senial al"
+            + " servidor," + SALTO + "graba el programa y muestra los oyentes."
+            + SALTO * 2
+            + "Emisora: " + (config.get("nombre_emisora") or "sin configurar")
+            + SALTO + "Servidor: "
+            + (config.get("host") or "sin configurar"),
+            parent=self)
 
     def ver_atajos(self):
         espacio = ESPACIO_TEXTOS.get(config.get("tecla_espacio", ESPACIO_MICRO),

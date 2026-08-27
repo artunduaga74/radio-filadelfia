@@ -248,6 +248,13 @@ gate pase, no dar por funcionando la emisión.
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
 
+- [2026-08-25] **Version 1.0.** Constante `VERSION` en `app.py`. Se ve en dos
+  sitios: el **titulo de la ventana** ("Filadelfia Broadcaster 1.0" — que es lo
+  que se lee al pasar el raton por la barra de tareas, asi que de un vistazo se
+  sabe que version corre en cada ordenador) y **Ayuda → Acerca de...**, con la
+  emisora y el servidor configurados. Etiquetada en git como `v1.0`.
+  465 comprobaciones en verde. — Estado: ✅
+
 - [2026-08-25] **La gráfica de oyentes dejó de trabajar en balde.**
   Salía de la investigación de arriba. `_pintar_oyentes()` corre **cada
   segundo** (lo llama `_tic_lento`), pero el servidor solo se sondea **cada
