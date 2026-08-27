@@ -476,8 +476,17 @@ class CurvaEQ(tk.Canvas):
 # Los tamanos que Windows pide de verdad. El 24 es imprescindible: es el que
 # usa la barra de tareas normal, y si no esta, Windows encoge el de 32 con un
 # filtro barato y el icono se ve borroso. Medido: incluirlo dobla la definicion.
-MEDIDAS_ICONO = [(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48),
-                 (64, 64), (96, 96), (128, 128), (256, 256)]
+# Los tamanos que Windows pide DE VERDAD, contando el escalado de pantalla.
+# La barra de tareas dibuja el icono a 24 puntos logicos, asi que al 125 % son
+# 30 px, al 150 % son 36 y al 200 % son 48; la barra de titulo pide 16 logicos
+# (20 / 24 / 32). Los que faltan Windows se los inventa encogiendo el mas
+# parecido con un filtro barato, y se nota: medido sobre este logo, a 36 px
+# salen 77.0 de definicion encogiendo el de 48 frente a 121.5 generandolo
+# directo desde el original. De ahi que 30, 36 y 60 esten en la lista.
+# (72 no: da 76.7 frente a 75.7, no compensa el peso.)
+MEDIDAS_ICONO = [(16, 16), (20, 20), (24, 24), (30, 30), (32, 32), (36, 36),
+                 (40, 40), (48, 48), (60, 60), (64, 64), (96, 96), (128, 128),
+                 (256, 256)]
 
 
 def _encoger(imagen, lado):

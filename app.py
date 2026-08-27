@@ -39,7 +39,9 @@ from estilo import Consejo, px
 TITULO = "Filadelfia Broadcaster"
 
 # como se llaman los protocolos en pantalla
-CORTINAS = 4          # cuantos botones de cortina hay
+CORTINAS = 8              # cuantos botones tiene el soundpad
+POR_FILA_SOUNDPAD = 4    # se reparten en filas de cuatro
+ANCHO_SOUNDPAD = 13      # en caracteres: caben nombres mas largos
 
 # Que hace la barra espaciadora (se elige en Configuracion > Audio)
 ESPACIO_MICRO = "microfono"
@@ -78,6 +80,12 @@ def reloj(segundos):
 
 # ==================================================================== ventana
 
+# Un salto de linea como constante: meterlo escapado dentro de las cadenas
+# de un parche automatico se convierte en salto REAL y rompe el archivo.
+# Ya paso el 2026-08-24 y volvio a pasar hoy.
+SALTO = chr(10)
+
+
 class App(tk.Tk):
 
     def __init__(self):
@@ -110,6 +118,9 @@ class App(tk.Tk):
         self.registro = []
         self.auto_siguiente = True
         self.ultimo_titulo_enviado = ""
+        # titulo puesto a mano con "Poner"; mientras no este vacio,
+        # el cambio de cancion no lo sobreescribe
+        self.titulo_programa = ""
         self._explorando = False
         self._aviso_acople = False
         self._musica_en_pausa_por_micro = False
@@ -222,6 +233,11 @@ class App(tk.Tk):
         m.add_command(label="Registro tecnico", command=self.ver_registro)
         m.add_command(label="Estadisticas de oyentes", command=self.ver_estadisticas)
         barra.add_cascade(label="Ver", menu=m)
+
+        m = tk.Menu(barra, tearoff=0)
+        m.add_command(label="Editor de metadatos...",
+                      command=self.abrir_metadatos)
+        barra.add_cascade(label="Metadatos", menu=m)
 
         m = tk.Menu(barra, tearoff=0)
         m.add_command(label="Atajos de teclado", command=self.ver_atajos)
@@ -484,16 +500,21 @@ class App(tk.Tk):
 
         botones = ttk.Frame(caja, style="Caja.TFrame")
         botones.grid(row=4, column=0, sticky="ew")
-        self.btn_play = ttk.Button(botones, text=ICO_PLAY,
+        # Los tres de transporte llevan `width` fijo (en caracteres): sin el,
+        # el relleno del estilo los estiraba hasta pegar "Grabar" con el de
+        # parar, sin un hueco donde soltar el raton.
+        self.btn_play = ttk.Button(botones, text=ICO_PLAY, width=3,
                                    style="Transporte.TButton",
                                    command=self.play_pausa)
         self.btn_play.pack(side="left")
         Consejo(self.btn_play, "Reproducir / pausa   (barra espaciadora)")
-        b = ttk.Button(botones, text=ICO_SIGUIENTE, style="Transporte.TButton",
+        b = ttk.Button(botones, text=ICO_SIGUIENTE, width=3,
+                       style="Transporte.TButton",
                        command=self.siguiente_pista)
         b.pack(side="left", padx=px(4))
         Consejo(b, "Siguiente pista   (Ctrl + flecha derecha)")
-        b = ttk.Button(botones, text=ICO_PARAR, style="Transporte.TButton",
+        b = ttk.Button(botones, text=ICO_PARAR, width=3,
+                       style="Transporte.TButton",
                        command=self.parar_musica)
         b.pack(side="left")
         Consejo(b, "Parar la musica")
@@ -501,7 +522,7 @@ class App(tk.Tk):
         self.btn_rec = ttk.Button(botones, text="%s  Grabar" % ICO_REC,
                                   style="Rec.TButton",
                                   command=self.alternar_grabacion)
-        self.btn_rec.pack(side="right")
+        self.btn_rec.pack(side="right", padx=(px(12), 0))
         Consejo(self.btn_rec,
                 "Grabar el programa. Es independiente de estar al aire: puedes poner musica sin grabarla y empezar a grabar cuando arranque el programa.")
 
@@ -607,21 +628,27 @@ class App(tk.Tk):
         # el primero es "el" microfono para los atajos y para el resto del codigo
         self.btn_micro = self.botones_micro[0]
 
-        # cortinas: sonidos cortos listos para lanzar encima de lo que suene
-        ttk.Label(caja, text="CORTINAS   ·   clic para lanzar, clic derecho "
+        # soundpad: sonidos cortos listos para lanzar encima de lo que suene
+        ttk.Label(caja, text="SOUNDPAD   ·   clic para lanzar, clic derecho "
                               "para asignar o renombrar",
                   style="CajaSuave.TLabel").grid(row=fila, column=0, columnspan=3,
                                                  sticky="w", pady=(px(8), px(2)))
         fila += 1
         cort = ttk.Frame(caja, style="Caja.TFrame")
         cort.grid(row=fila, column=0, columnspan=3, sticky="ew")
+        for col in range(POR_FILA_SOUNDPAD):
+            cort.columnconfigure(col, weight=1, uniform="pad")
         self.botones_cortina = []
         self.cortinas = [None] * CORTINAS
         self.nombres_cortina = [""] * CORTINAS
+        # En rejilla y por filas: en una sola fila, ocho botones no caben sin
+        # dejarlos tan estrechos que el nombre no se lee (que era la queja).
         for i in range(CORTINAS):
-            b = ttk.Button(cort, text=str(i + 1), style="Caja.TButton", width=9,
+            b = ttk.Button(cort, text=str(i + 1), style="Caja.TButton",
+                           width=ANCHO_SOUNDPAD,
                            command=lambda n=i: self.disparar_cortina(n))
-            b.pack(side="left", padx=(0, px(4)))
+            b.grid(row=i // POR_FILA_SOUNDPAD, column=i % POR_FILA_SOUNDPAD,
+                   sticky="ew", padx=(0, px(4)), pady=(0, px(4)))
             b.bind("<Button-3>", lambda e, n=i: self.menu_cortina(n, e))
             self.botones_cortina.append(b)
 
@@ -728,9 +755,32 @@ class App(tk.Tk):
                 self._aviso_acople = False
             self._encadenar()
             self._pintar_oyentes()
+            self._vigilar_hardware()
         except tk.TclError:
             return
         self.after(1000, self._tic_lento)
+
+    def _vigilar_hardware(self):
+        """
+        Avisa (una sola vez) si se enchufa o se quita un aparato de audio.
+
+        Se mira cada 4 segundos y cuesta unos 3 ms, porque se pregunta al
+        registro de Windows y NO a la tarjeta de sonido: preguntarselo a
+        PortAudio obligaria a reiniciarlo, y eso corta el microfono y los
+        auriculares. Aqui solo se avisa; cambiar de verdad los aparatos lo
+        decide el usuario en Configuracion -> Audio.
+        """
+        self._cuenta_hw = getattr(self, "_cuenta_hw", 0) + 1
+        if self._cuenta_hw % 4:
+            return
+        if not self.mezclador.hay_hardware_nuevo():
+            self._aviso_hw = False
+            return
+        if getattr(self, "_aviso_hw", False):
+            return                        # ya se aviso de este cambio
+        self._aviso_hw = True
+        self.mensaje("Cambio un aparato de audio. Configuracion -> Audio -> "
+                     "\"Buscar aparatos nuevos\" para usarlo.")
 
     def _encadenar(self):
         """Cuando una pista termina, entra la siguiente de la lista."""
@@ -781,7 +831,9 @@ class App(tk.Tk):
         if self.mezclador.error:
             self._anotar(self.mezclador.error)
             self.mensaje(self.mezclador.error)
-        if self.emisor.arrancar():
+        # `intentar_salir_al_aire` (y no `arrancar`) para que, si todavia no
+        # hay internet, siga intentandolo en vez de rendirse al primer golpe
+        if self.emisor.intentar_salir_al_aire():
             self.mensaje("Conectando con el servidor...")
             if config.get("grabar_al_aire") and not self.grabador.grabando:
                 # por el Grabador, para que lleve etiquetas y caratula
@@ -825,11 +877,21 @@ class App(tk.Tk):
             return
         canal = self.mezclador.canales[indice]
         if not canal.micro.abierto:
+            # Antes esto se limitaba a protestar, y como el motivo salia
+            # vacio ("-") no habia forma de saber que pasaba. Ahora se
+            # intenta abrirlo AQUI MISMO: casi siempre es que el aparato se
+            # acaba de asignar, o que se solto al cambiar de hardware.
+            self.mezclador.sincronizar_microfonos()
+        if not canal.micro.abierto:
             messagebox.showwarning(
                 "Microfono",
-                "No se pudo abrir %s.\n\n%s\n\n"
-                "Revisa cual tiene asignado en Configuracion > Audio."
-                % (canal.nombre, canal.error or "-"), parent=self)
+                "No se pudo abrir %s." % canal.nombre + SALTO * 2
+                + (canal.error or "Windows no dejo abrirlo: puede que lo "
+                                 "este usando otro programa, o que el "
+                                 "aparato asignado ya no este conectado.")
+                + SALTO * 2
+                + "Revisa cual tiene asignado en Configuracion > Audio.",
+                parent=self)
             return
         abierto = self.mezclador.alternar_micro(indice)
         self._pintar_micros()
@@ -886,24 +948,41 @@ class App(tk.Tk):
             config.guardar_microfonos(micros)
 
     def _texto_al_aire(self):
-        """
-        Lo que se lee en la radio, en el formato que esperan los reproductores.
+        """Lo que se lee en la radio: "Autor - Titulo" (ver servidor)."""
+        return servidor.componer_titulo(self.var_titulo.get(),
+                                        self.var_autor_aire.get())
 
-        Va como "Autor - Titulo": mandando solo el titulo, la web de la emisora
-        y las aplicaciones ponen "Unknown" donde deberia ir el autor.
+    def _texto_de_pista(self, pista):
         """
-        titulo = self.var_titulo.get().strip()
-        autor = self.var_autor_aire.get().strip()
-        if titulo and autor:
-            return "%s - %s" % (autor, titulo)
-        return titulo or autor
+        Lo que se anuncia cuando cambia la cancion, con el autor SIEMPRE puesto.
+
+        `biblioteca.etiqueta()` devuelve solo el titulo cuando el archivo no
+        trae etiqueta de artista, y ese hueco es justo el que la radio muestra
+        como "Unknown". Si el archivo no lo dice, firma la emisora.
+        """
+        autor = (pista.get("artista", "") or "").strip()
+        if not autor:
+            autor = (config.get("nombre_emisora", "") or "").strip()
+        return servidor.componer_titulo(pista.get("titulo", ""), autor)
 
     def poner_titulo(self):
         texto = self._texto_al_aire()
+        autor = self.var_autor_aire.get().strip()
         if not texto:
+            # los dos campos vacios = soltar el programa y volver a anunciar
+            # cada cancion, que es lo que hace la aplicacion por su cuenta
+            if self.titulo_programa:
+                self.titulo_programa = ""
+                self.mensaje("Titulo del programa quitado: vuelve a anunciarse "
+                             "cada cancion.")
             return
         # el autor se recuerda: casi siempre es el mismo
-        config.guardar({"autor": self.var_autor_aire.get().strip()})
+        config.guardar({"autor": autor})
+        # Queda FIJADO: mientras haya un titulo de programa puesto a mano, el
+        # cambio de cancion no lo pisa. Antes lo pisaba a los pocos segundos y
+        # el autor desaparecia -> la radio ponia "Unknown".
+        self.titulo_programa = texto
+        self.ultimo_titulo_enviado = texto
         ok, detalle = servidor.actualizar_titulo(texto)
         self.mensaje("Al aire: %s" % texto if ok
                      else "No se pudo poner el titulo (%s)" % detalle)
@@ -976,8 +1055,11 @@ class App(tk.Tk):
         Consejo(self.lbl_pista, self.titulo_completo)
         self.lbl_artista.configure(text=pista.get("artista", ""))
         self._marcar_sonando()
-        # avisar al servidor que cambio la cancion
-        etiqueta = biblioteca.etiqueta(pista)
+        # avisar al servidor que cambio la cancion.
+        # Si hay un titulo de programa puesto con "Poner", ese manda: en una
+        # transmision en vivo lo que se anuncia es el programa, no el archivo
+        # que suene de fondo.
+        etiqueta = "" if self.titulo_programa else self._texto_de_pista(pista)
         if etiqueta and etiqueta != self.ultimo_titulo_enviado and self.emisor.al_aire:
             self.ultimo_titulo_enviado = etiqueta
             threading.Thread(target=servidor.actualizar_titulo,
@@ -1046,7 +1128,7 @@ class App(tk.Tk):
         if self.nombres_cortina[n]:
             return self.nombres_cortina[n]
         if self.cortinas[n]:
-            return Path(self.cortinas[n]).stem[:12]
+            return Path(self.cortinas[n]).stem[:ANCHO_SOUNDPAD]
         return str(n + 1)
 
     def _pintar_cortina(self, n):
@@ -1359,6 +1441,26 @@ class App(tk.Tk):
             return
         self._ventana_aire = ventana_aire.VentanaAire(self)
 
+    def abrir_metadatos(self):
+        """
+        El editor de etiquetas de un programa ya grabado.
+
+        Una sola ventana: si ya esta abierta se trae al frente en vez de
+        abrir otra, que llevaria a guardar dos veces el mismo archivo.
+        """
+        v = getattr(self, "ventana_metadatos", None)
+        if v is not None:
+            try:
+                if v.winfo_exists():
+                    v.deiconify()
+                    v.lift()
+                    return v
+            except tk.TclError:
+                pass
+        import ventana_metadatos
+        self.ventana_metadatos = ventana_metadatos.VentanaMetadatos(self)
+        return self.ventana_metadatos
+
     def ver_registro(self):
         v = tk.Toplevel(self)
         v.title("Registro tecnico")
@@ -1639,10 +1741,34 @@ class DialogoConfig(tk.Toplevel):
 
         entradas = [n for _, n, _, _ in audio.listar(entrada=True)]
         salidas = [n for _, n, _, _ in audio.listar(entrada=False)]
+        # se guardan para poder repoblarlos al encontrar hardware nuevo, sin
+        # cerrar y volver a abrir la ventana de configuracion
+        self._combos_entrada = []
+        self._combos_salida = []
 
-        ttk.Label(f, text="MICROFONOS   .   uno por cada persona al aire",
-                  style="Suave.TLabel").grid(row=fila, column=0, columnspan=3,
-                                             sticky="w")
+        # Enchufar un microfono con la aplicacion abierta no se nota solo:
+        # PortAudio se queda con la lista que habia al arrancar. Este boton la
+        # vuelve a pedir sin cortar la emision (ver
+        # `motor.Mezclador.refrescar_dispositivos`).
+        #
+        # Va en la MISMA fila que el rotulo, y la explicacion en un globo de
+        # ayuda, porque esta ventana ya median 1048 px en una pantalla de 1080:
+        # dos filas mas la sacaban de la pantalla y los botones de abajo se
+        # quedaban fuera. Es la leccion 2 del CLAUDE.md, otra vez.
+        fila_hw = ttk.Frame(f)
+        fila_hw.grid(row=fila, column=0, columnspan=3, sticky="ew")
+        ttk.Label(fila_hw, text="MICROFONOS   .   uno por cada persona al aire",
+                  style="Suave.TLabel").pack(side="left")
+        self.btn_buscar_hw = ttk.Button(fila_hw, text="Buscar aparatos nuevos",
+                                        command=self.buscar_hardware)
+        self.btn_buscar_hw.pack(side="right")
+        Consejo(self.btn_buscar_hw,
+                "Si enchufas otro microfono o unos auriculares con la "
+                "aplicacion ya abierta, Windows los ve pero la aplicacion no. "
+                "Pulsa aqui y aparecen en las listas. No corta la emision: "
+                "solo se va tu voz un cuarto de segundo.")
+        self.lbl_hw = ttk.Label(fila_hw, text="", style="Suave.TLabel")
+        self.lbl_hw.pack(side="right", padx=px(8))
         fila += 1
         self.vars_micros = []
         micros = config.microfonos()
@@ -1657,8 +1783,11 @@ class DialogoConfig(tk.Toplevel):
             v_nombre = tk.StringVar(value=m.get("nombre") or "")
             ttk.Entry(fila_m, textvariable=v_nombre, width=12).pack(side="left")
             v_disp = tk.StringVar(value=m.get("dispositivo") or "")
-            ttk.Combobox(fila_m, textvariable=v_disp, values=[""] + entradas,
-                         width=34, state="readonly").pack(side="left", padx=px(6))
+            combo = ttk.Combobox(fila_m, textvariable=v_disp,
+                                 values=[""] + entradas, width=34,
+                                 state="readonly")
+            combo.pack(side="left", padx=px(6))
+            self._combos_entrada.append(combo)
             self.vars_micros.append((v_nombre, v_disp))
             fila += 1
         ttk.Label(f, text="Deja el aparato en blanco para no usar ese canal. "
@@ -1674,9 +1803,10 @@ class DialogoConfig(tk.Toplevel):
         ttk.Label(f, text="Auriculares:").grid(row=fila, column=0, sticky="w",
                                                pady=px(4))
         self.var_monitor = tk.StringVar(value=config.get("monitor"))
-        ttk.Combobox(f, textvariable=self.var_monitor, values=salidas,
-                     width=38, state="readonly").grid(row=fila, column=1,
-                                                      columnspan=2, sticky="ew")
+        combo_mon = ttk.Combobox(f, textvariable=self.var_monitor,
+                                 values=salidas, width=38, state="readonly")
+        combo_mon.grid(row=fila, column=1, columnspan=2, sticky="ew")
+        self._combos_salida.append(combo_mon)
         fila += 1
 
         ttk.Label(f, text="Su volumen:").grid(row=fila, column=0, sticky="w",
@@ -1802,6 +1932,80 @@ class DialogoConfig(tk.Toplevel):
                 "Auriculares",
                 "%s\n\nSi son Bluetooth, comprueba que esten conectados y "
                 "elegidos arriba." % detalle, parent=self)
+
+    def buscar_hardware(self):
+        """
+        Vuelve a preguntar que aparatos de audio hay, con la app en marcha.
+
+        Se hace en OTRO hilo, no aqui: enumerar la tarjeta de sonido tarda unos
+        250 ms de normal, pero un aparato Bluetooth despertandose puede llevarse
+        treinta segundos (medido), y con la ventana congelada eso parece que la
+        aplicacion se ha colgado. **La emision no se toca**: el mezclador sigue
+        girando y el emisor sigue recibiendo su bloque a tiempo; lo unico que
+        parpadea es el microfono y los auriculares.
+        """
+        mez = self.padre.mezclador
+        micro_abierto = any(c.abierto for c in mez.canales)
+        if mez.corriendo and micro_abierto and self.padre.emisor.al_aire:
+            seguir = messagebox.askyesno(
+                "Buscar aparatos nuevos",
+                "Estas AL AIRE con el microfono abierto." + SALTO * 2 +
+                "La emision no se corta, pero tu voz se ira un cuarto de "
+                "segundo mientras se cambian los aparatos." + SALTO * 2 +
+                "¿Seguir?",
+                parent=self)
+            if not seguir:
+                return
+
+        self.btn_buscar_hw.state(["disabled"])
+        self.lbl_hw.configure(text="buscando...")
+        self._hw_resultado = None
+
+        def trabajo():
+            inicio = time.time()
+            ok, detalle = mez.refrescar_dispositivos()
+            self._hw_resultado = (ok, detalle, time.time() - inicio)
+
+        threading.Thread(target=trabajo, daemon=True).start()
+        self._esperar_hardware()
+
+    def _esperar_hardware(self):
+        """El hilo deja el resultado en un atributo; aqui se recoge."""
+        resultado = getattr(self, "_hw_resultado", None)
+        if resultado is None:
+            try:
+                self.after(120, self._esperar_hardware)
+            except tk.TclError:
+                pass
+            return
+        self._hw_resultado = None
+        ok, detalle, segundos = resultado
+        try:
+            self.btn_buscar_hw.state(["!disabled"])
+            self.lbl_hw.configure(
+                text=("listo (%.1f s)" % segundos) if ok else "hubo un problema")
+        except tk.TclError:
+            return
+        self._refrescar_listas_audio()
+        self.padre.mensaje(detalle)
+        self.padre._anotar("hardware de audio: %s" % detalle)
+        if not ok:
+            messagebox.showwarning("Buscar aparatos nuevos", detalle, parent=self)
+
+    def _refrescar_listas_audio(self):
+        """Repuebla los desplegables sin cerrar la ventana ni perder lo elegido."""
+        entradas = [n for _, n, _, _ in audio.listar(entrada=True)]
+        salidas = [n for _, n, _, _ in audio.listar(entrada=False)]
+        for combo in getattr(self, "_combos_entrada", []):
+            try:
+                combo.configure(values=[""] + entradas)
+            except tk.TclError:
+                pass
+        for combo in getattr(self, "_combos_salida", []):
+            try:
+                combo.configure(values=salidas)
+            except tk.TclError:
+                pass
 
     def _pestana_microfono(self, nb):
         """Ecualizador de la voz: ajustes de fabrica y uno a su gusto."""

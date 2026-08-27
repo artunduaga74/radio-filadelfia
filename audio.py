@@ -10,6 +10,7 @@ Los archivos se decodifican con ffmpeg, no con una libreria de Python: asi
 suena cualquier cosa (mp3, wav, flac, m4a, ogg, opus...) sin instalar nada mas.
 """
 
+import os
 import queue
 import shutil
 import subprocess
@@ -51,6 +52,83 @@ def listar(entrada=True, api=None):
     if not fuera and api:                 # esa API no tiene nada: mostrar todo
         return listar(entrada, api="")
     return fuera
+
+
+# --- detectar hardware nuevo SIN tocar el audio que esta sonando -----------
+#
+# El problema: PortAudio se queda con la lista de aparatos que habia cuando
+# arranco. Enchufar otro microfono con la aplicacion abierta no se nota, y para
+# que se note hay que reiniciar PortAudio... lo que MATA todos los streams
+# abiertos (medido: "Invalid stream pointer", y 127 ms de parada).
+#
+# Asi que preguntar "¿hay algo nuevo?" NO puede hacerse por ahi. Se hace por el
+# registro de Windows, donde Core Audio anota cada punto de entrada y salida
+# con su estado (1 = activo). Medido: 3.3 ms de media, 5.1 el peor de 50, y no
+# toca ni una sola vez la tarjeta de sonido. Comprobado que la cuenta coincide
+# con la que ve PortAudio (2 entradas y 2 salidas WASAPI en este equipo).
+_REG_AUDIO = r"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio"
+
+
+def huella_hardware():
+    """
+    Una "foto" barata de los aparatos de audio activos.
+
+    Se compara consigo misma: si cambia, es que se enchufo o se quito algo.
+    Devuelve una tupla (comparable y sin sorpresas). Fuera de Windows, o si el
+    registro no se deja leer, devuelve () y entonces nadie avisa de nada, que
+    es preferible a dar un aviso falso cada segundo.
+    """
+    if os.name != "nt":
+        return ()
+    try:
+        import winreg
+    except ImportError:
+        return ()
+    partes = []
+    for rama in ("Capture", "Render"):
+        try:
+            clave = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                   _REG_AUDIO + "\\" + rama)
+        except OSError:
+            continue
+        try:
+            i = 0
+            while True:
+                try:
+                    sub = winreg.EnumKey(clave, i)
+                except OSError:
+                    break
+                i += 1
+                try:
+                    with winreg.OpenKey(clave, sub) as k:
+                        estado, _ = winreg.QueryValueEx(k, "DeviceState")
+                    if estado == 1:            # 1 = activo y enchufado
+                        partes.append(rama + ":" + sub)
+                except OSError:
+                    pass
+        finally:
+            try:
+                clave.Close()
+            except Exception:
+                pass
+    return tuple(sorted(partes))
+
+
+def refrescar():
+    """
+    Vuelve a preguntarle a Windows que aparatos hay.
+
+    OJO: esto reinicia PortAudio, y eso INVALIDA cualquier stream abierto
+    (microfonos y monitor). No llamar a esto por las buenas: el que sabe
+    cerrarlos y volver a abrirlos en orden es `Mezclador.refrescar_dispositivos`.
+    Tarda unos 130 ms.
+    """
+    try:
+        sd._terminate()
+        sd._initialize()
+        return True, ""
+    except Exception as e:
+        return False, "%s: %s" % (type(e).__name__, e)
 
 
 def buscar(nombre, entrada=True):
@@ -244,7 +322,15 @@ class Pista:
 
     def reproducir(self, fundido_ms=0):
         if not self._proc:
-            return False
+            # "Parar" mata el ffmpeg de la pista pero deja la ruta puesta, asi
+            # que sin esto darle al play despues de parar no hacia NADA: la
+            # pista se quedaba trabada y habia que mover el deslizador (que
+            # recarga por dentro) o volver a elegirla en la lista.
+            if not self.ruta:
+                return False
+            self.cargar(self.ruta, self.titulo, self.duracion, desde=0.0)
+            if not self._proc:
+                return False
         self.sonando = True
         if fundido_ms:
             n = int(self.muestreo * fundido_ms / 1000.0)

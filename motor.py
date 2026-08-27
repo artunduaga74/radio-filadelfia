@@ -137,6 +137,14 @@ class Mezclador:
         self._hilo = None
         self._lock = threading.Lock()
 
+        # Para poder soltar y recuperar los aparatos con la aplicacion en
+        # marcha (ver `refrescar_dispositivos`). Mientras `_soltar` este
+        # puesto, el bucle no toca ni el monitor ni los microfonos, y avisa
+        # de que ya no los esta usando poniendo `_soltado`.
+        self._soltar = threading.Event()
+        self._soltado = threading.Event()
+        self.hardware = audio.huella_hardware()
+
     # --- atajos al primer microfono, que es el del locutor -----------------
 
     @property
@@ -174,10 +182,7 @@ class Mezclador:
         if self.corriendo:
             return True
         self.error = ""
-        fallos = []
-        for c in self.canales:
-            if not c.micro.abrir():
-                fallos.append("%s: %s" % (c.nombre, c.micro.error))
+        fallos = self.sincronizar_microfonos()
         if fallos:
             # se sigue igual: se puede transmitir con los que si abrieron
             self.error = "  |  ".join(fallos)
@@ -254,6 +259,166 @@ class Mezclador:
             return True, "Ahora suena por: %s" % (self._monitor_puesto
                                                   or "la salida del sistema")
         return False, self.error
+
+    def sincronizar_microfonos(self):
+        """
+        Deja cada canal con el aparato que diga la configuracion, y ABIERTO.
+
+        Dos cosas que hay que tener claras y que costaron un fallo:
+
+        1. `arrancar()` abre el stream de TODOS los microfonos de una vez, y el
+           boton de la mesa solo levanta una bandera (`canal.abierto`). O sea:
+           un microfono con el stream cerrado **no se puede encender desde el
+           boton**, diga lo que diga la bandera. Asi que aqui se abren todos,
+           esten o no al aire.
+        2. Cambiar el aparato en Configuracion no llegaba al canal (de ahi el
+           "los microfonos se aplican al reiniciar"). Ahora si: si el nombre
+           guardado no es el que tiene el canal, se cierra y se vuelve a abrir
+           con el nuevo.
+
+        Devuelve la lista de fallos, vacia si todo abrio.
+        """
+        fallos = []
+        for aj, c in zip(config.microfonos(), self.canales):
+            quiere = aj.get("dispositivo") or None
+            if c.micro.dispositivo != quiere:
+                c.micro.cerrar()
+                c.micro.dispositivo = quiere
+            if quiere is None:
+                # Sin aparato asignado el canal no se usa, que es justo lo que
+                # promete la ventana de Configuracion ("deja el aparato en
+                # blanco para no usar ese canal"). Antes se abrian igual, con
+                # lo que la aplicacion agarraba el microfono por defecto de
+                # Windows una vez por cada canal vacio y luego se quejaba de
+                # unos canales que el usuario no queria.
+                c.abierto = False
+                continue
+            if c.micro.abierto:
+                continue
+            if not c.micro.abrir():
+                c.abierto = False         # no puede estar al aire si no abrio
+                fallos.append("%s: %s" % (c.nombre,
+                                          c.micro.error or "no se pudo abrir"))
+        return fallos
+
+    def hay_hardware_nuevo(self):
+        """
+        ¿Se ha enchufado o quitado algo desde la ultima vez?
+
+        Cuesta unos 3 ms y NO toca la tarjeta de sonido (ver
+        `audio.huella_hardware`), asi que se puede preguntar cada pocos
+        segundos sin miedo a estorbar a la emision.
+        """
+        ahora = audio.huella_hardware()
+        if not ahora or not self.hardware:
+            return False                   # sin datos fiables, no se avisa
+        return ahora != self.hardware
+
+    def refrescar_dispositivos(self):
+        """
+        Vuelve a mirar que aparatos hay, con la aplicacion en marcha.
+
+        Por que hace falta: PortAudio se queda con la lista que habia al
+        arrancar, asi que un microfono enchufado despues no aparece. Para que
+        aparezca hay que reiniciarlo, y eso invalida los streams abiertos.
+
+        **El aire NO se corta.** El bucle del mezclador sigue girando todo el
+        rato: la musica no depende de la tarjeta de sonido (la decodifica
+        ffmpeg) y el emisor sigue recibiendo su bloque a tiempo. Lo unico que
+        se pierde es el sonido del MICROFONO y el de los auriculares durante
+        el cambio, medido en unos 250 ms.
+
+        Devuelve (ok, explicacion).
+        """
+        antes = list(audio.listar(entrada=True)) + list(audio.listar(entrada=False))
+        abiertos = [c.abierto for c in self.canales]
+
+        if not self.corriendo:
+            # sin mezclador en marcha no hay nada que proteger
+            ok, detalle = audio.refrescar()
+            self.hardware = audio.huella_hardware()
+            if not ok:
+                return False, "No se pudo releer el hardware: " + detalle
+            return True, self._resumen_cambio(antes)
+
+        self._soltado.clear()
+        self._soltar.set()
+        try:
+            # esperar a que el bucle confirme que ya no toca los aparatos.
+            # Como mucho tarda lo que dure un bloque (unos 11 ms a 512/48k);
+            # se le da margen de sobra y, si no contesta, se sigue igual: es
+            # peor quedarse con el hardware viejo para siempre.
+            self._soltado.wait(timeout=0.5)
+
+            salida, self._salida = self._salida, None
+            if salida:
+                try:
+                    salida.stop()
+                    salida.close()
+                except Exception:
+                    pass
+            for c in self.canales:
+                try:
+                    c.micro.cerrar()
+                except Exception:
+                    pass
+
+            ok, detalle = audio.refrescar()
+            if not ok:
+                return False, "No se pudo releer el hardware: " + detalle
+
+            # Los auriculares SI se reabren aqui dentro, con el bucle todavia
+            # apartado. Sacarlos fuera parecia mas rapido y salio mal: el bucle
+            # escribia en el stream recien creado, la primera escritura fallaba
+            # y el `except` lo dejaba en None **sin decir nada**. Resultado:
+            # una de cada tres veces te quedabas sin auriculares y sin aviso.
+            monitor_ok = (not self.monitor_activo) or self._abrir_monitor()
+        finally:
+            # Se suelta en cuanto PortAudio esta releido y el monitor puesto.
+            # Los microfonos se abren DESPUES, con el bucle ya trabajando
+            # normal: es la parte lenta y el bucle no toca esos objetos, asi
+            # que asi el mezclador va a ciegas la mitad de tiempo (medido: el
+            # peor hueco que ve el emisor baja de 44 a unos 20 ms).
+            self._soltar.clear()
+            self._soltado.clear()
+
+        # Volver a abrir TODOS los microfonos, no solo los que estaban al aire.
+        # Reabrir solo esos fue un fallo de verdad: como lo normal es tenerlos
+        # cerrados mientras uno trastea en Configuracion, quedaban todos con el
+        # stream muerto y despues el boton contestaba "No se pudo abrir
+        # Micro 1" sin decir por que. Se abren por NOMBRE, asi que si el
+        # aparato cambio de numero al enchufar otro, o si el usuario acaba de
+        # asignarle uno nuevo, se coge el que toca.
+        fallos = self.sincronizar_microfonos()
+        for c, estaba in zip(self.canales, abiertos):
+            c.abierto = estaba and c.micro.abierto
+        if not monitor_ok:
+            fallos.append(self.aviso_monitor or self.error
+                          or "no se pudieron abrir los auriculares")
+
+        self.hardware = audio.huella_hardware()
+        resumen = self._resumen_cambio(antes)
+        if fallos:
+            self.error = "  |  ".join(f for f in fallos if f)
+            return False, "%s Pero: %s" % (resumen, self.error)
+        return True, resumen
+
+    def _resumen_cambio(self, antes):
+        """Que ha aparecido y que se ha ido, para poder decirlo con nombres."""
+        despues = (list(audio.listar(entrada=True))
+                   + list(audio.listar(entrada=False)))
+        nombres_antes = set(n for _, n, _, _ in antes)
+        nombres_ahora = set(n for _, n, _, _ in despues)
+        nuevos = sorted(nombres_ahora - nombres_antes)
+        idos = sorted(nombres_antes - nombres_ahora)
+        partes = []
+        if nuevos:
+            partes.append("nuevo: " + ", ".join(nuevos))
+        if idos:
+            partes.append("ya no esta: " + ", ".join(idos))
+        if not partes:
+            return "Lista actualizada (sin cambios)."
+        return "Lista actualizada. " + "  ·  ".join(partes)
 
     def medir_retraso(self):
         """
@@ -348,6 +513,15 @@ class Mezclador:
         siguiente = time.perf_counter()
         contador = 0
         while not self._parar.is_set():
+            # Mientras se cambia el hardware, el bucle SIGUE girando (el aire
+            # no se corta: el emisor recibe su bloque igual) pero no toca ni
+            # los microfonos ni el monitor. `_soltado` es la senial de que ya
+            # se puede cerrar todo sin pillar al hilo dentro de un `write`.
+            if self._soltar.is_set():
+                self._soltado.set()
+            else:
+                self._soltado.clear()
+
             bloque = self._mezclar(self.bloque)
 
             if self.emisor is not None:
@@ -355,7 +529,7 @@ class Mezclador:
             if self.grabador is not None:
                 self.grabador.recibir(bloque)
 
-            if self._salida is not None:
+            if self._salida is not None and not self._soltar.is_set():
                 try:
                     # esto bloquea el tiempo del bloque: es nuestro reloj
                     # el volumen de los auriculares NO toca lo que sale al
@@ -425,7 +599,8 @@ class Mezclador:
         # --- microfonos (el del locutor y los de los invitados)
         mic = np.zeros((cuadros, CANALES), dtype=np.float32)
         hablando = False
-        for c in self.canales:
+        canales = [] if self._soltar.is_set() else self.canales
+        for c in canales:
             bloque_mic = c.leer(cuadros)
             if bloque_mic is not None:
                 mic += bloque_mic
@@ -513,3 +688,8 @@ class Mezclador:
             v = dict(aj.get("eq") or {})
             v["zumbido"] = float(aj.get("zumbido", 0) or 0)
             c.eq.cargar(v, aj.get("eq_preset", "Plano"))
+        if self.corriendo:
+            # y si ha cambiado el APARATO de algun microfono, se cambia al
+            # momento: antes habia que reiniciar la aplicacion entera
+            fallos = self.sincronizar_microfonos()
+            self.error = "  |  ".join(fallos) if fallos else self.error

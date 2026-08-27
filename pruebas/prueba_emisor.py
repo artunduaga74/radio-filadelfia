@@ -181,6 +181,158 @@ else:
           e2.detalle[:50])
 e2.detener()
 
+print("")
+print("=== RECONEXION AUTOMATICA (con un servidor ICY de mentira) ===")
+# Esto NUNCA se habia probado, y estaba roto: `_caida` cerraba el socket pero
+# dejaba vivo ffmpeg, y como `arrancar()` empieza con "si ya hay un ffmpeg
+# vivo, no hagas nada", el reintento se creia conectado. Resultado: al caerse
+# el internet la emisora se quedaba en "error" para siempre.
+import socket as _socket
+import threading as _hilos
+
+import numpy as _np
+
+# El fin de linea del protocolo, como constante: escrito dentro de una
+# cadena en un parche automatico se convierte en salto REAL y rompe el
+# archivo. Ya ha pasado tres veces en este proyecto.
+FIN = bytes([13, 10])
+
+
+def _servidor_icy(corta_a_los=None, rechaza=False):
+    """Devuelve (puerto, lista_de_conexiones, cerrar())."""
+    srv = _socket.socket()
+    srv.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(5)
+    conexiones = []
+
+    def atender():
+        while True:
+            try:
+                c, _ = srv.accept()
+            except OSError:
+                return
+            conexiones.append(time.time())
+            try:
+                c.recv(256)
+                if rechaza:
+                    c.sendall(b"Invalid password" + FIN)
+                    c.close()
+                    continue
+                c.sendall(b"OK2" + FIN + FIN)
+                fin = time.time() + (corta_a_los or 9999)
+                c.settimeout(0.3)
+                while time.time() < fin:
+                    try:
+                        if not c.recv(65536):
+                            break
+                    except _socket.timeout:
+                        pass
+                    except OSError:
+                        break
+            except Exception:
+                pass
+            finally:
+                try:
+                    c.close()
+                except Exception:
+                    pass
+
+    _hilos.Thread(target=atender, daemon=True).start()
+    return srv.getsockname()[1], conexiones, srv.close
+
+
+def _alimentar(em, segundos):
+    """Como hace el mezclador: bloques sin parar."""
+    fin = time.time() + segundos
+
+    def bucle():
+        n = int(48000 * 0.02)
+        while time.time() < fin:
+            em.enviar(_np.zeros((n, 2), dtype=_np.float32))
+            time.sleep(0.02)
+
+    _hilos.Thread(target=bucle, daemon=True).start()
+
+
+puerto, conexiones, cerrar = _servidor_icy(corta_a_los=1.5)
+config.guardar({"host": "127.0.0.1", "puerto": puerto - 1,
+                "sumar_uno_v1": True, "protocolo": "shoutcast_v1",
+                "reconectar": True, "reconectar_seg": 2, "bitrate": 64,
+                "muestreo": 48000, "canales": 2})
+config.guardar_clave("clave_fuente", "loquesea")
+e3 = emisor.Emisor()
+e3.intentar_salir_al_aire()
+_alimentar(e3, 12)
+time.sleep(12)
+check("se reconecta solo cuando el servidor corta", len(conexiones) >= 3,
+      "%d conexiones en 12 s" % len(conexiones))
+check("y acaba al aire otra vez", e3.al_aire, e3.estado)
+check("ffmpeg NO se queda vivo tras una caida (era el fallo)",
+      e3._proc is None or e3._proc.poll() is None)
+e3.detener()
+cerrar()
+
+# --- sin internet al salir al aire: debe insistir hasta que vuelva ---
+libre = _socket.socket()
+libre.bind(("127.0.0.1", 0))
+puerto2 = libre.getsockname()[1]
+libre.close()
+config.guardar({"puerto": puerto2 - 1})
+e4 = emisor.Emisor()
+e4.intentar_salir_al_aire()
+_alimentar(e4, 16)
+check("sin servidor, queda en error pero con reintento en camino",
+      e4.estado == emisor.ERROR and e4._reintento_pendiente,
+      "%s / pendiente=%s" % (e4.estado, e4._reintento_pendiente))
+time.sleep(6)
+srv2 = _socket.socket()
+srv2.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+srv2.bind(("127.0.0.1", puerto2))
+srv2.listen(5)
+llegadas = []
+
+
+def atender2():
+    while True:
+        try:
+            c, _ = srv2.accept()
+        except OSError:
+            return
+        llegadas.append(1)
+        try:
+            c.recv(256)
+            c.sendall(b"OK2" + FIN + FIN)
+            while True:
+                if not c.recv(65536):
+                    break
+        except Exception:
+            pass
+
+
+_hilos.Thread(target=atender2, daemon=True).start()
+time.sleep(7)
+check("entra sola en cuanto vuelve el internet", len(llegadas) >= 1,
+      "%d conexiones tras levantar el servidor" % len(llegadas))
+e4.detener()
+try:
+    srv2.close()
+except Exception:
+    pass
+
+# --- clave mala: NO insistir (machacar al servidor acaba en bloqueo) ---
+puerto3, golpes, cerrar3 = _servidor_icy(rechaza=True)
+config.guardar({"puerto": puerto3 - 1})
+config.guardar_clave("clave_fuente", "mala")
+e5 = emisor.Emisor()
+e5.intentar_salir_al_aire()
+time.sleep(8)
+check("con la clave mal NO se pone a insistir", len(golpes) <= 1,
+      "%d golpes al servidor en 8 s" % len(golpes))
+check("y lo dice claro", "clave" in e5.detalle.lower(), e5.detalle[:50])
+e5.detener()
+cerrar3()
+
 import procesos
 procesos.cerrar_todos()
 vivos = [p for p in procesos._vivos if p.poll() is None]

@@ -74,6 +74,33 @@ def estado():
         return vacio
 
 
+def componer_titulo(titulo, autor):
+    """
+    Lo que se lee en la radio, en el formato que esperan los reproductores.
+
+    SHOUTcast manda **una sola cadena** de texto, no dos campos. Centova (y con
+    el todos los reproductores web y los telefonos) la parte por el primer
+    " - " para sacar el artista y el titulo: por eso, mandando solo el titulo,
+    el hueco del artista sale como "Unknown".
+
+    Comprobado contra el servidor real el 2026-08-25:
+        rawmeta "Fernando Miranda - Simeon y Ana"
+        -> track {"artist": "Fernando Miranda", "title": "Simeon y Ana"}
+
+    Aguanta que falte cualquiera de los dos, y quita un " - " que ya viniera
+    escrito en el titulo para no acabar con dos separadores.
+    """
+    titulo = (titulo or "").strip()
+    autor = (autor or "").strip()
+    if not autor:
+        return titulo
+    if not titulo:
+        return autor
+    if titulo.lower().startswith(autor.lower() + " - "):
+        return titulo                      # ya venia compuesto
+    return "%s - %s" % (autor, titulo)
+
+
 def actualizar_titulo(titulo):
     """
     Pone el "sonando ahora" que ven los oyentes.

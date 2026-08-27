@@ -381,6 +381,31 @@ check("con 512 tambien mezcla bien",
       m9._mezclar(m9.bloque).shape == (512, 2),
       str(m9._mezclar(m9.bloque).shape))
 
+print("")
+print("=== PARAR y volver a REPRODUCIR (bug del 25-08) ===")
+# "Parar" mata el ffmpeg de la pista pero deja la ruta puesta, y `reproducir()`
+# empezaba con "si no hay proceso, no hagas nada": la pista se quedaba trabada
+# y habia que mover el deslizador o volver a elegirla en la lista.
+pista = audio.Pista(48000, 512)
+pista.cargar(TONO, "tono", 0.0)
+pista.reproducir()
+for _ in range(40):
+    pista.leer(512)
+
+
+def _pico(p, n=40):
+    return float(np.abs(np.vstack([p.leer(512) for _ in range(n)])).max())
+
+
+check("suena al reproducir", _pico(pista) > 0.05)
+pista.detener()
+check("se calla al parar", _pico(pista) < 0.001)
+check("el play la revive", pista.reproducir() is True)
+check("y vuelve a sonar de verdad", _pico(pista) > 0.05)
+check("empieza desde el principio", pista.posicion < 1.5,
+      "%.2f s" % pista.posicion)
+pista.detener()
+
 print("\n" + "=" * 60)
 print("  %d comprobaciones OK, %d fallos" % (ok, len(fallos)))
 if fallos:

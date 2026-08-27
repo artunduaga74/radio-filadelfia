@@ -106,7 +106,9 @@ eq.py              cadena de voz: ecualizador, compresor, puerta y limitador
 grabador.py        grabación a disco con su propio botón, aparte de la emisión
 monitor_aire.py    escucha el chorro real y mide su nivel (detecta silencio)
 ventana_aire.py    ventanita flotante con el estado de la emisora
-pruebas/           350 comprobaciones automáticas (5 archivos)
+metadatos.py       leer y escribir las etiquetas de un archivo ya grabado
+ventana_metadatos.py  el editor de metadatos (menú Metadatos)
+pruebas/           461 comprobaciones automáticas (7 archivos)
 ```
 
 **Formato interno:** float32, 2 canales, **48000 Hz** (lo que usa WASAPI en
@@ -150,7 +152,31 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
    defensas: `emisor.limpiar_host()` sanea el campo siempre, y la verificación
    real es la respuesta del servidor (`OK` / `Invalid password`), no el código
    de salida. Hay prueba de no regresión en `pruebas/prueba_emisor.py`.
-8. **Las pruebas NO deben escribir en la configuración real.** Redirigir
+8. **Una función que nunca se ha probado, dala por rota.** La reconexión
+   automática llevaba desde el primer día en el código, con su opción en
+   Configuración y su mensaje en el registro, y **no funcionaba en absoluto**.
+   Nadie la había ejercitado porque hacía falta un servidor que cortara la
+   conexión a propósito. Montar ese servidor de mentira cuesta veinte líneas.
+   Vale para cualquier camino de recuperación de errores: son justo los que no
+   se recorren en el uso normal, y por eso se pudren sin que nadie lo note.
+9. **Dos sitios que hacen la misma tarea acaban divergiendo.** Abrir los
+   micrófonos estaba escrito en `arrancar()` y otra vez en el refresco de
+   hardware, con una diferencia sutil (uno abría todos, el otro solo los que
+   estuvieran al aire) — y esa diferencia dejó al usuario sin micrófono. Ahora
+   hay una sola `sincronizar_microfonos()` por la que pasa todo el mundo.
+   Antes de copiar unas líneas, preguntarse si no toca extraerlas.
+10. **Un fallo intermitente no se ve corriendo la prueba una vez.** El monitor
+   se quedaba mudo una de cada tres veces por una carrera entre el hilo del
+   mezclador y la reapertura de la salida. Con las prisas de "las pruebas pasan"
+   se habría colado. Ante cualquier cosa que huela a carrera entre hilos:
+   correrla cinco u ocho veces seguidas.
+11. **Un umbral de prueba tiene que salir de la arquitectura, no de la
+   intuición.** Puse "3 periodos" porque sonaba razonable; flaqueaba con el
+   ruido de Windows y no medía nada real. El número bueno salía del código:
+   el emisor mete silencio a los 500 ms de cola vacía. Si un umbral falla a
+   veces, casi siempre está mal elegido — pero **antes de relajarlo hay que
+   comprobar que no está señalando un fallo de verdad** (aquí señalaba dos).
+12. **Las pruebas NO deben escribir en la configuración real.** Redirigir
    `config.ARCHIVO_AJUSTES` y compañía a una carpeta temporal *antes* de
    importar la app. (En el transcriptor unas pruebas dejaron basura en los
    "recientes" del usuario.)
@@ -164,8 +190,8 @@ con `after(60ms)`; el hilo de audio nunca toca un widget.
 en GitHub (`artunduaga74/radio-filadelfia`, privado) y al día.
 
 **Cómo trabajar aquí:**
-1. Las pruebas son la red de seguridad: `python pruebas/prueba_*.py`, cinco
-   archivos, **350 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
+1. Las pruebas son la red de seguridad: `python pruebas/prueba_*.py`, siete
+   archivos, **461 comprobaciones**. Correrlas SIEMPRE antes y después de tocar
    nada, y **vigilar que el número no baje** — un descenso silencioso ha
    delatado ya tres parches que no se habían aplicado.
 2. Todo lo de audio se **mide** (dB, LUFS, espectro), no se estima. Hay
@@ -196,8 +222,23 @@ gate pase, no dar por funcionando la emisión.
 
 **Backlog (no construir sin pedirlo):**
 - Icono propio y `.exe` portable con PyInstaller.
-- Programación por horarios (parrilla) — ojo: el 24/7 conviene dejarlo en el
-  servidor; la app solo toma el aire en vivo.
+- **Programación por horarios (parrilla) — VIABILIDAD ESTUDIADA el 2026-08-25.**
+  Pregunta del usuario: "que se conecte al servidor a las 5am y transmita X".
+  Técnicamente es fácil (las piezas ya existen: lista de reproducción,
+  `cortar_al_terminar`, y ahora `intentar_salir_al_aire()`, que insiste hasta
+  que haya internet). Lo caro NO es el código, es que **depende de que su PC
+  esté encendido y despierto a las 5 de la mañana**. Comprobado en su equipo:
+  admite suspensión S3 e hibernación, y el Programador de tareas de Windows
+  sabe despertarlo, así que se puede montar.
+  **Pero antes de construirlo hay que decidir dónde vive el 24/7:** su Centova
+  tiene el **autoDJ ACTIVO** (comprobado en el servidor), y un autoDJ hace
+  exactamente esto — listas programadas por hora — **sin depender de que su
+  ordenador esté encendido, sin gastar su internet y sin que un apagón o una
+  actualización de Windows tumben el programa**. La regla del proyecto sigue
+  siendo la buena: *el 24/7 se deja en el servidor; la aplicación toma el aire
+  en vivo*. La parrilla en la aplicación solo tiene sentido para bloques que
+  necesiten la mesa (mezclas, cortinas, micrófono), no para "poner un MP3 a las
+  5". Decisión pendiente del usuario.
 - Cartwall más grande que 4 cortinas.
 - Procesado tipo radio (compresor multibanda). Con `loudnorm`/`compand` se
   llega al 70-80 %; al 100 % no (eso es Stereo Tool/Omnia).
@@ -206,6 +247,234 @@ gate pase, no dar por funcionando la emisión.
 ## 7. Bitácora
 
 > Anotar aquí cada avance: fecha, qué se hizo, estado, qué sigue.
+
+- [2026-08-25] **Parar/reproducir trabado, botones del reproductor y SOUNDPAD.**
+  **(1) BUG: tras "Parar", el play no hacía nada.** `Pista.detener()` mata el
+  ffmpeg de la pista pero **deja la ruta puesta**, y `reproducir()` empezaba con
+  *"si no hay proceso, no hagas nada"*. Resultado: la pista se quedaba trabada y
+  había que mover el deslizador (que por dentro recarga) o volver a elegirla en
+  la lista — justo lo que describió el usuario. Ahora `reproducir()` se cura
+  solo: si no hay proceso pero sí ruta, la recarga desde el principio. Medido
+  con el nivel de audio real: 0.336 sonando → 0.000 al parar → 0.337 al darle
+  al play otra vez.
+  **(2) "Grabar" pegado al botón de parar.** Los tres de transporte no llevaban
+  `width`, así que el relleno del estilo los estiraba hasta juntarse con
+  "Grabar". Con `width=3` pasan de 112 a **96 px** cada uno y el hueco antes de
+  "Grabar" pasa de 0 a **214 px**.
+  **(3) Cortinas → SOUNDPAD**, de 4 a **8 botones**, en rejilla de 2 filas de 4
+  (en una sola tira no caben sin dejarlos tan estrechos que el nombre no se lee,
+  que era la queja) y más anchos: de 9 a 13 caracteres, **149 px**, y el nombre
+  que se lee sube de 12 a 13 caracteres. ⚠️ La clave guardada sigue siendo
+  `cortinas`, así que **no se pierde lo que ya tuviera asignado**: comprobado
+  con su `ajustes.json` real, las cuatro que tenía siguen ahí.
+  ⚠️ Una prueba dejó de pasar y **no era un fallo**: comparaba contra la lista
+  fija `["2","3","4"]`. Ahora se compara contra el número de botones que haya.
+  461 comprobaciones. — Estado: ✅
+
+- [2026-08-25] **INVESTIGACIÓN (sin tocar nada): el PC lento tras 2 horas.**
+  El usuario estuvo 2 h seguidas (1 grabando, 1 transmitiendo) y al final el
+  audio salía entrecortado y **todo el ordenador iba lento, internet incluido**.
+  Se le echó un vistazo al código y se midió lo barato. **NO se arregló nada**,
+  por petición suya. Lo que hay hasta ahora:
+  **Descartado (medido):** no hay fuga de memoria en el camino en reposo — 3
+  minutos de aplicación viva dan RAM plana en 124.4 MB, 2 hilos, handles
+  estables y el número de objetos de Python sin moverse. El registro técnico
+  está acotado a 500 líneas. El gráfico de oyentes hace `delete("all")` antes de
+  redibujar, así que no acumula objetos en el lienzo (que es la causa clásica de
+  "se va poniendo lento"). El servidor se sondea cada 15 s, no cada segundo. No
+  quedan procesos ffmpeg huérfanos.
+  **SOSPECHOSO PRINCIPAL, y no es la aplicación: el disco está casi lleno.**
+  `C:` tiene **9.2 GB libres de 139 (93 % usado)** y `D:` 10.8 de 97.7 (89 %).
+  Windows se arrastra cuando al disco del sistema le queda tan poco: el archivo
+  de paginación no puede crecer, y las tareas de fondo (indexado, Windows
+  Update, mantenimiento) machacan el disco. Encaja con TODOS sus síntomas —
+  incluido que se ralentizara *el internet* y que *reiniciar lo arreglara*, que
+  es justo lo que hace un reinicio: liberar paginación y temporales. Una sesión
+  de 2 h grabando escribe además ~0.3 GB, apretando más.
+  **Ineficiencia real encontrada, menor:** `_pintar_oyentes()` corre **cada
+  segundo** y abre una conexión SQLite nueva cada vez (`_conex()`, con su
+  `PRAGMA journal_mode=WAL`) para consultar las últimas 2 horas. Medido:
+  **1.84 ms por consulta**, o sea ~6.6 s de CPU por hora tirados. No explica
+  por sí solo lo que le pasó, pero sobra: el gráfico no necesita redibujarse más
+  de una vez cada 10-15 s (que es cada cuánto llega un dato nuevo). **Pendiente
+  de arreglar.**
+  **Lo que NO se ha probado y haría falta para concluir:** una sesión larga con
+  el camino REAL (mezclador + emisor + grabador a la vez), midiendo RAM, hilos y
+  CPU. Sin eso no se puede afirmar que la aplicación esté limpia bajo carga.
+  — Estado: 🔄 investigación abierta — Siguiente: que libere espacio en C: y
+  vuelva a hacer un programa largo; si se repite, medir bajo carga real.
+
+- [2026-08-25] **Rompí el micrófono con lo de arriba, y de paso salieron 3 fallos más.**
+  El usuario probó lo del hardware en caliente: encontró su Maonocaster, se lo
+  asignó al Micro 1, pulsó el botón y le salió **"No se pudo abrir Micro 1"**
+  con el motivo VACÍO ("-"). Reproducido en dos minutos.
+  **(1) Mi regresión.** `arrancar()` abre el stream de TODOS los micrófonos de
+  una vez, y el botón de la mesa **solo levanta una bandera**: no sabe abrir un
+  stream cerrado. Mi refresco los cerraba todos y **reabría solo los que
+  estuvieran ya al aire** — y como lo normal es tenerlos cerrados mientras uno
+  trastea en Configuración, quedaban todos muertos.
+  **(2) Fallo de fondo que salió a la luz:** cambiar el aparato de un micrófono
+  en Configuración **nunca llegaba al canal** (de ahí el letrero "los
+  micrófonos se aplican al reiniciar"). Justo lo que él necesitaba. Ahora
+  `aplicar_ajustes` lo sigue y el cambio surte efecto al momento.
+  **(3) Los canales en blanco se abrían igual.** La ventana promete "deja el
+  aparato en blanco para no usar ese canal", pero se abrían los cuatro: la
+  aplicación agarraba el micrófono por defecto de Windows tres veces de más y
+  luego se quejaba de canales que el usuario no quiere.
+  **(4) Los auriculares se quedaban mudos una de cada tres veces, sin avisar.**
+  Al sacar la reapertura del monitor fuera de la zona protegida, el bucle
+  escribía en el stream recién creado, la primera escritura fallaba y el
+  `except` lo dejaba en `None` **en silencio**. Encontrado corriendo la prueba
+  cinco veces seguidas, no una.
+  **Arreglado con una sola pieza:** `Mezclador.sincronizar_microfonos()`, que
+  ahora es **el único sitio del programa que abre micrófonos** — `arrancar()`,
+  `aplicar_ajustes()`, `refrescar_dispositivos()` y el propio botón de la mesa
+  pasan por ella. Tener dos versiones de la misma tarea fue lo que permitió que
+  se colara la diferencia. El botón además **se cura solo**: si el stream está
+  cerrado lo intenta abrir ahí mismo antes de protestar, y si no puede da un
+  motivo de verdad en vez de un guión.
+  **Orden final del refresco, con su porqué:** soltar → cerrar → reiniciar
+  PortAudio → **reabrir el monitor (dentro de la protección, o pasa el fallo 4)**
+  → soltar → abrir micrófonos (fuera, que es la parte lenta). Medido: el peor
+  hueco que ve el emisor bajó de 44 a **~24 ms**.
+  ⚠️ **Sobre el umbral de la prueba:** tenía puesto "3 periodos = 32 ms", que
+  era un número inventado por mí, y flaqueaba con el ruido de planificación de
+  Windows. Ahora es **250 ms, la mitad del único límite real** (el escritor del
+  emisor mete silencio a los 500 ms de cola vacía; el servidor suelta la fuente
+  a los 30 s), y se mide **además la mediana**, que es lo que delata una
+  regresión de verdad. Ocho pasadas seguidas en verde.
+  454 comprobaciones. — Estado: ✅ — Siguiente: que vuelva a probarlo con su
+  Maonocaster.
+
+- [2026-08-25] **⚠️ FALLO GRAVE: la reconexión automática NUNCA funcionó.**
+  El usuario preguntó si la aplicación vuelve sola cuando se cae internet. El
+  código decía que sí desde el primer día, y **estaba roto**; nadie lo había
+  probado nunca (las 39 comprobaciones del emisor no tocaban este camino).
+  **Reproducido** con un servidor ICY de mentira que corta la conexión: 0
+  reintentos en 12 s, la emisora en "error" para siempre.
+  **La causa:** `_caida()` cerraba el socket pero **dejaba vivo ffmpeg**, y
+  `arrancar()` empieza con *"si ya hay un ffmpeg vivo, no hagas nada"*. El
+  reintento se creía conectado y se iba sin hacer nada. Medido: `socket=False`
+  y `ffmpeg_vivo=True` durante los 12 s enteros.
+  **Segundo fallo del mismo sitio:** salir al aire **sin internet** se rendía
+  al primer golpe. `arrancar()` fallaba, y como no llegaba a montar los hilos
+  que avisan de la caída, nadie volvía a intentarlo jamás. Justo el caso de
+  "dejo el programa puesto y me voy".
+  **Arreglado:** (1) `_soltar_todo()` cierra socket **y** ffmpeg antes de
+  reintentar; (2) `_reintentar()` se encadena a sí mismo si tampoco puede;
+  (3) `intentar_salir_al_aire()` (lo que llama el botón) programa el reintento
+  cuando el fallo es de red; (4) bandera `_reintento_pendiente`, porque de una
+  sola caída avisan los DOS hilos y se programaban dos reconexiones que se
+  peleaban; (5) `_sin_arreglo` — **con la clave mal NO insiste**: eso no se
+  arregla esperando y machacar al servidor cada dos segundos con una clave
+  equivocada es la forma de acabar bloqueado.
+  **Medido después:** 3 reconexiones en 12 s cuando el servidor corta; con
+  internet caído entra sola a los 12.1 s de volver la línea; con la clave mala,
+  1 solo golpe en 8 s. Todo ello es ahora prueba de no regresión.
+
+- [2026-08-25] **Cambiar de micrófono sin cerrar la aplicación.**
+  Pedido del usuario: enchufar otro micrófono con la aplicación abierta y que
+  se entere, "sin perder latencia o que se cuelgue la transmisión".
+  **El problema medido:** PortAudio se queda con la lista de aparatos que había
+  al arrancar. Para releerla hay que reiniciarlo, y eso **invalida todos los
+  streams abiertos** (comprobado: *Invalid stream pointer*) y tarda unos 130 ms.
+  Así que preguntar "¿hay algo nuevo?" NO puede pasar por ahí — sería
+  exactamente lo que él temía.
+  **Solución en dos piezas.** (1) *Preguntar* es barato y no toca el audio:
+  `audio.huella_hardware()` lee el registro de Windows, donde Core Audio anota
+  cada entrada y salida con su estado. **3.3 ms de media**, frente a 127 ms de
+  reiniciar PortAudio; comprobado que la cuenta coincide con la que ve
+  PortAudio. Se mira cada 4 s y avisa en la barra de estado, una sola vez.
+  (2) *Cambiar de verdad* lo decide el usuario, con el botón **"Buscar aparatos
+  nuevos"** en Configuración → Audio: `Mezclador.refrescar_dispositivos()`
+  levanta una bandera, **el bucle sigue girando** pero suelta micrófonos y
+  monitor, se reinicia PortAudio y se vuelve a abrir solo lo que estaba abierto
+  (por NOMBRE, así que si el aparato cambió de número al enchufar otro se
+  reencuentra igual).
+  **El aire NO se corta, y está medido:** durante el cambio el emisor siguió
+  recibiendo bloques con un hueco peor de **25.6 ms** frente a los 10.7 ms
+  normales — ni un solo hueco por encima del límite de 32 — y se entregó tanto
+  audio como tiempo pasó (2.5 % de desfase). La música ni se entera: la
+  decodifica ffmpeg, no la tarjeta de sonido. Lo único que parpadea es la voz,
+  unos 250 ms. Si está al aire con el micrófono abierto, se avisa antes.
+  Se hace **en otro hilo**: lo normal son 250-300 ms, pero se midió un caso de
+  **30 s** con unos auriculares Bluetooth despertándose, y con la ventana
+  congelada eso parece que la aplicación se colgó. Medido: la ventana nunca se
+  para más de 38 ms.
+  ⚠️ **Ojo con la altura de Configuración:** ya medía **1048 px en una pantalla
+  de 1080**. Las dos filas que añadí la llevaron a 1122 y los botones de abajo
+  se salían (lección 2, otra vez). El botón acabó en la MISMA fila del rótulo
+  "MICROFONOS" y la explicación en un globo de ayuda: la ventana vuelve a medir
+  1048 exactos. Hay prueba que lo vigila.
+  ⚠️ **Y por tercera vez:** un parche con `
+
+` dentro de una cadena volvió a
+  romper un archivo. Ahora se usan constantes (`SALTO`, `FIN`).
+  447 comprobaciones en verde (eran 415). — Estado: ✅ — Siguiente: que pruebe a
+  enchufar su micrófono con la aplicación abierta.
+
+- [2026-08-25] **El autor seguía saliendo "Unknown": lo pisaba la música.**
+  El arreglo del día anterior (mandar `Autor - Título` en una sola cadena) era
+  correcto pero **duraba unos segundos**. Al arrancar cada pista, `_poner_pista`
+  volvía a mandar el "sonando ahora" con `biblioteca.etiqueta(pista)` — y esa
+  función devuelve **solo el título** cuando el MP3 no trae etiqueta de artista.
+  O sea: se pulsaba "Poner", salía bien, y a la primera canción el autor
+  desaparecía. Dos senderos escribiendo el mismo dato, uno de ellos sin autor.
+  **Comprobado contra el servidor real** (sin tocar la emisión): Centova parte
+  la cadena por el primer " - " para separar artista y título —
+  `rawmeta "Fernando Miranda - Simeón y Ana"` → `{"artist": "Fernando
+  Miranda", "title": "Simeón y Ana"}` — así que sin separador el hueco del
+  artista sale como "Unknown". Los dos endpoints de metadata existen y piden
+  clave (401 con una falsa), o sea que el envío funcionaba; lo que fallaba era
+  **el contenido**.
+  **Arreglado en tres piezas:** (1) `servidor.componer_titulo()`, una sola
+  función que arma la cadena, usada por los dos senderos (y que no duplica el
+  separador si el título ya venía compuesto); (2) `App._texto_de_pista()`, que
+  al anunciar una canción **siempre pone autor**: el del archivo y, si no lo
+  trae, el nombre de la emisora; (3) `titulo_programa` — mientras haya un
+  título puesto a mano con "Poner", el cambio de canción **ya no lo pisa**, que
+  es lo que uno espera en una transmisión en vivo (se anuncia el programa, no
+  el archivo que suene de fondo). Vaciando los dos campos y pulsando "Poner" se
+  suelta y vuelve a anunciarse cada canción.
+  *Lección repetida: al arreglar un dato, buscar quién MÁS lo escribe.* Es la
+  misma del 24 con la grabación automática.
+
+- [2026-08-25] **Editor de metadatos (menú Metadatos, al lado de Ver).**
+  `grabador.py` pone las etiquetas mientras graba; a un programa ya guardado no
+  había forma de tocarle nada. Nuevos `metadatos.py` (lógica) y
+  `ventana_metadatos.py` (la ventana), con **los mismos campos y la misma
+  tarjeta de vista previa** de Configuración → Transmisión, a propósito.
+  Detalles que importan: **no recodifica** (`-c copy`, medido: la duración no
+  se mueve ni 0.05 s), rellena `album_artist` solo (sin él, los teléfonos
+  agrupan los programas en "Varios"), conserva o cambia o quita la carátula, y
+  **nunca escribe encima del original**: genera un temporal completo en la
+  misma carpeta y solo entonces hace `os.replace`. Probado a propósito con una
+  carátula que no existe: avisa, el archivo queda con el mismo tamaño y las
+  mismas etiquetas, y no deja temporales tirados.
+  Se admiten mp3, m4a, aac, ogg, opus, flac, wav y wma.
+  ⚠️ **Fallo mío cazado por la prueba de integración:** el hilo que escribe
+  llamaba a `self.after(...)`, y eso revienta con *main thread is not in main
+  loop*. Es justo la regla que este documento ya trae en §4 (tkinter no es
+  seguro entre hilos). Cambiado al patrón del resto de la casa: el hilo deja el
+  resultado en un atributo y la ventana lo recoge sondeando con `after`.
+
+- [2026-08-25] **Iconos borrosos: faltaban los tamaños del escalado de pantalla.**
+  El `.ico` llevaba 16/20/24/32/40/48/… pero la **barra de tareas dibuja a 24
+  puntos lógicos**, que con su pantalla al 150 % son **36 px reales** — un
+  tamaño que no estaba. Windows lo fabricaba encogiendo el de 48 con un filtro
+  barato. Medido sobre este logo: **77.0 de definición frente a 121.5** del
+  generado directo a 36. Añadidos **30 (125 %), 36 (150 %) y 60 (250 %)**;
+  72 se descartó porque no compensa (76.7 frente a 75.7).
+  **El .bat no puede llevar icono propio**: Windows le pone siempre el de la
+  consola, se configure lo que se configure. Lo que sí admite icono es un
+  acceso directo, así que hay `crear_acceso_directo.ps1` — crea "Filadelfia
+  Broadcaster.lnk" en el **escritorio y en el menú Inicio** apuntando a
+  `pythonw.exe app.py` (sin consola detrás) con `icono.ico`, y de paso refresca
+  la caché de iconos de Windows (`ie4uinit.exe -show`), que es lo que hace que
+  a veces se siga viendo el icono viejo. Si se mueve la carpeta, volver a
+  ejecutarlo.
+  415 comprobaciones en verde (eran 350). — Estado: ✅ — Siguiente: que el
+  usuario confirme el autor al aire en su próxima transmisión.
 
 - [2026-08-25] **La radio mostraba "Unknown": faltaba el autor en el stream.**
   El usuario vio que el título salía bien pero el autor aparecía como

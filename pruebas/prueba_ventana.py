@@ -219,9 +219,19 @@ check("se puede cambiar por un numero", a.botones_cortina[0].cget("text") == "1"
 a.quitar_cortina(0)
 check("al quitarla vuelve a su numero",
       a.botones_cortina[0].cget("text") == "1" and a.cortinas[0] is None)
+# se compara contra el numero de botones que haya, no contra una lista fija:
+# el soundpad paso de 4 a 8 y esta comprobacion se rompio sin que nada
+# estuviera mal
+esperados = [str(i + 1) for i in range(1, len(a.botones_cortina))]
 check("las demas siguen numeradas",
-      [b.cget("text") for b in a.botones_cortina[1:]] == ["2", "3", "4"],
+      [b.cget("text") for b in a.botones_cortina[1:]] == esperados,
       str([b.cget("text") for b in a.botones_cortina[1:]]))
+check("el soundpad tiene los botones que dice la constante",
+      len(a.botones_cortina) == mod_app.CORTINAS,
+      "%d botones" % len(a.botones_cortina))
+check("y se reparten en filas, no en una sola tira",
+      len(set(b.winfo_y() for b in a.botones_cortina)) > 1,
+      "%d filas" % len(set(b.winfo_y() for b in a.botones_cortina)))
 
 print("")
 print("=== Barra espaciadora configurable ===")

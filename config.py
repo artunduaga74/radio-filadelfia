@@ -143,8 +143,11 @@ DEFECTOS = {
     # junto a la aplicacion, que es lo que la mantiene portable.
     "carpeta_grabaciones": "",
     "carpeta_efectos": "",
-    "cortinas": [None, None, None, None],        # el audio de cada boton
-    "cortinas_nombres": ["", "", "", ""],        # como se lee cada boton
+    # el soundpad: el audio de cada boton y como se lee. Se guardan con la
+    # clave "cortinas" de siempre para no perder lo que ya tenga asignado
+    # quien viniera de la version de cuatro botones.
+    "cortinas": [None] * 8,
+    "cortinas_nombres": [""] * 8,
     "grabar_al_aire": False,    # la grabacion tiene su propio boton
     # Al acabarse la lista SIN repetir: cortar la transmision sola. Sirve para
     # dejar programado un bloque y que la emisora vuelva al autoDJ al terminar.

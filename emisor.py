@@ -163,6 +163,10 @@ class Emisor:
         self._sock = None
         self._cola = queue.Queue(maxsize=64)
         self._parar = threading.Event()
+        self._reintento_pendiente = False   # ya hay uno programado
+        self._intentos = 0        # reintentos seguidos
+        self._sin_arreglo = False # el fallo no se arregla insistiendo
+        self.quiere_aire = False  # el usuario pidio estar al aire
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ estado
@@ -199,6 +203,7 @@ class Emisor:
             aj = config.cargar()
             host = limpiar_host(aj.get("host", ""))
             if not host:
+                self._sin_arreglo = True
                 self._poner(ERROR, "Falta configurar el servidor")
                 return False
 
@@ -210,6 +215,7 @@ class Emisor:
             self.grabacion = None
 
             por_icy = aj.get("protocolo") == "shoutcast_v1"
+            self._sin_arreglo = False
             self._poner(CONECTANDO, "")
             puerto_real = puerto_fuente(aj.get("puerto"),
                                         aj.get("protocolo"))
@@ -229,6 +235,11 @@ class Emisor:
                         bitrate=int(aj.get("bitrate", 128)))
                 except icy.ErrorICY as e:
                     self._sock = None
+                    # Una clave mal puesta no se arregla insistiendo, y darle
+                    # golpes al servidor cada dos segundos con la clave
+                    # equivocada es la forma de acabar bloqueado. Un problema
+                    # de red, en cambio, se arregla solo esperando.
+                    self._sin_arreglo = "rechazo la clave" in str(e).lower()
                     self._poner(ERROR, str(e))
                     self._log("ICY: %s" % e)
                     return False
@@ -272,6 +283,12 @@ class Emisor:
     def detener(self):
         with self._lock:
             self._parar.set()
+            # cortar a mano cancela cualquier reconexion en camino: si no, el
+            # temporizador volveria a sacarnos al aire despues de haber pulsado
+            # CORTAR
+            self._reintento_pendiente = False
+            self._intentos = 0
+            self.quiere_aire = False
             proc, self._proc = self._proc, None
         try:
             while True:
@@ -395,6 +412,25 @@ class Emisor:
                 self._poner(ERROR, "No se pudo conectar: " + txt)
 
     def _caida(self):
+        """
+        Se ha perdido el servidor: dejarlo TODO cerrado y programar el reintento.
+
+        ⚠️ Cerrar tambien ffmpeg es imprescindible, no un detalle de limpieza.
+        Antes solo se cerraba el socket, y como `arrancar()` empieza con
+        "si ya hay un ffmpeg vivo, no hagas nada", el reintento se creia
+        conectado y **no reconectaba nunca**: al caerse el internet la
+        aplicacion se quedaba en "error" para siempre y habia que darle al
+        boton a mano. Reproducido contra un servidor de mentira que corta la
+        conexion: 0 reintentos en 12 s, con ffmpeg vivo todo el rato.
+        """
+        # De una sola caida avisan los DOS hilos (el escritor y el que empuja
+        # al socket), asi que sin esta bandera se programarian dos reconexiones
+        # a la vez y acabarian peleandose por el mismo servidor. Se levanta al
+        # programar el reintento y la baja `_reintentar` al ejecutarlo.
+        with self._lock:
+            if self._reintento_pendiente:
+                return
+            self._reintento_pendiente = True
         if self.estado == ERROR:
             detalle = self.detalle
         elif self.estado == CONECTANDO:
@@ -402,20 +438,86 @@ class Emisor:
         else:
             detalle = "Se perdio la conexion"
         self.desde = 0.0
-        self._cerrar_socket()
+        self._soltar_todo()
         self._poner(ERROR, detalle)
-        if config.get("reconectar", True) and not self._parar.is_set():
-            espera = max(2, int(config.get("reconectar_seg", 5)))
-            self._log("Reintentando en %d s..." % espera)
-            t = threading.Timer(espera, self._reintentar)
-            t.daemon = True
-            t.start()
+        if not (config.get("reconectar", True) and not self._parar.is_set()):
+            self._reintento_pendiente = False
+            return
+        self._programar_reintento()
+
+    def _programar_reintento(self):
+        espera = max(2, int(config.get("reconectar_seg", 5)))
+        self._intentos += 1
+        self._reintento_pendiente = True
+        self._log("Reintentando en %d s... (intento %d)"
+                  % (espera, self._intentos))
+        t = threading.Timer(espera, self._reintentar)
+        t.daemon = True
+        t.start()
+
+    def _soltar_todo(self):
+        """Cierra el socket y mata ffmpeg, sin tocar el estado."""
+        with self._lock:
+            proc, self._proc = self._proc, None
+        if proc:
+            try:
+                if proc.stdin:
+                    proc.stdin.close()
+            except Exception:
+                pass
+            try:
+                proc.terminate()          # no se espera: hay que volver ya
+            except Exception:
+                pass
+        self._cerrar_socket()
+
+    def intentar_salir_al_aire(self):
+        """
+        Lo que llama el boton SALIR AL AIRE.
+
+        A diferencia de `arrancar()` a secas, si no se pudo conectar **por la
+        red** (no hay internet todavia, el servidor esta caido) deja programado
+        el reintento en vez de rendirse al primer golpe. Antes, salir al aire
+        sin internet daba "error" y ahi se quedaba para siempre; con esto la
+        emisora entra sola en cuanto la linea vuelve, que es justo lo que hace
+        falta para dejar un programa puesto y marcharse.
+
+        Con la clave mal NO insiste: eso no se arregla esperando, y machacar al
+        servidor con una clave equivocada es la forma de acabar bloqueado.
+        """
+        self._parar.clear()
+        self.quiere_aire = True
+        self._intentos = 0
+        if self.arrancar():
+            return True
+        if (config.get("reconectar", True) and not self._sin_arreglo
+                and not self._parar.is_set()):
+            self._programar_reintento()
+        return False
 
     def _reintentar(self):
+        """
+        Vuelve a intentarlo, y si tampoco puede se programa otro intento.
+
+        Hace falta encadenarlo aqui porque cuando `arrancar()` falla de entrada
+        (el servidor sigue caido, o no hay internet todavia) no llega a montar
+        los hilos que avisan de la caida, asi que nadie mas volveria a
+        intentarlo. Sin esto, un corte de internet de mas de un minuto dejaba
+        la emisora fuera hasta que alguien lo notara.
+        """
+        self._reintento_pendiente = False
         if self._parar.is_set():
             return
         self._log("Reconectando...")
-        self.arrancar()
+        if self.arrancar():
+            self._intentos = 0
+            return
+        if self._sin_arreglo:
+            self._log("Esto no se arregla insistiendo: %s" % self.detalle)
+            return
+        if config.get("reconectar", True) and not self._parar.is_set():
+            self._log("Sigue sin poder conectar.")
+            self._programar_reintento()
 
 
 # ------------------------------------------------------------------ pruebas
