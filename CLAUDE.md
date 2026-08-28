@@ -242,7 +242,60 @@ gate pase, no dar por funcionando la emisión.
 - Cartwall más grande que 4 cortinas.
 - Procesado tipo radio (compresor multibanda). Con `loudnorm`/`compand` se
   llega al 70-80 %; al 100 % no (eso es Stereo Tool/Omnia).
-- Integrar los MP3 que genera la skill `audio-emisora`.
+- Integrar los MP3 que genera la skill `audio-emisora`. **Qué es:** una skill
+  personal del usuario (`~/.claude/skills/audio-emisora/`) que convierte un tema
+  o un artículo FFA en guión de radio y luego en MP3 con voz sintética de
+  OpenAI. Los archivos caen en `D:\programación\supabaseudios\` y hoy se
+  quedan ahí huérfanos: hay que copiarlos a mano. Integrar = que el broadcaster
+  conozca esa carpeta y pueda mandarlos a la lista o al servidor.
+  Idea del usuario (2026-08-27): usar sus guiones ya escritos de la Voz de
+  Filadelfia. **Ojo:** hay que adaptarlos para que se lean **de corrido** —
+  quitar títulos, viñetas, paréntesis y cualquier marca visual, o la voz los
+  lee en alto o suenan raro.
+
+- **[PEDIDO 2026-08-27] Subir audio al servidor por FTP.** Comprobado: el
+  servidor **ya tiene FTP** — puerto 21 abierto, responde `cc-ftpd`, que es el
+  demonio propio de Centova Cast, y da acceso a la **biblioteca de medios del
+  servidor** (de donde el autoDJ saca la música), no a las carpetas del PC.
+  O sea: no hay que montar ningún FTP, hay que **usarlo**. `ftplib` viene con
+  Python. Encaja con su flujo: grabar → etiquetar con el editor de metadatos →
+  subir sin salir de la aplicación, eligiendo carpeta de destino (quiere
+  organizarlas: Himnos, En vivo, Resúmenes IA...). ⚠️ El FTP plano manda la
+  clave sin cifrar; el 990 está cerrado, mirar si acepta FTPS explícito
+  (`AUTH TLS`) en el 21. **Es lo primero de la lista, por decisión del usuario.**
+
+- **[PEDIDO 2026-08-27] TELEPROMPTER (autocue) dentro de la aplicación.**
+  El usuario pega el guión en texto y la aplicación se lo va desplegando poco a
+  poco para leerlo al aire, con **pausa y continuar**. Lo pidió con estas
+  palabras: "que me lo vaya desplegando de a poco para que yo lo pueda ir
+  leyendo, le pueda dar pausa a seguir".
+  Notas para cuando se construya: ventana propia (como el monitor de aire),
+  letra grande y regulable, velocidad de desplazamiento ajustable, atajo de
+  teclado para pausar sin mirar (que con el micro abierto no se puede andar
+  buscando el ratón), y una línea/banda que marque por dónde va. Encaja con lo
+  de los guiones de la skill `audio-emisora`: el mismo texto sirve para leerlo
+  en vivo o para convertirlo a MP3.
+
+- **[PEDIDO 2026-08-27] Procesado tipo radio de verdad, sin depender del
+  hardware.** Contexto nuevo e importante: el usuario tiene una consola
+  **Maono AME2** con supresión de ruido POR HARDWARE, y por eso tiene apagados
+  el compresor, la puerta y el ecualizador de la aplicación. Pero **no siempre
+  cuenta con el Maono** (su otro micro es un Fifine), así que quiere que la
+  aplicación sola deje una voz de radio. **Criterio de éxito concreto: que el
+  Fifine pelado suene bien.**
+  Falta: (a) **nivelador (AGC) de toda la mezcla** — hoy el compresor solo actúa
+  sobre el micro, así que música y voz quedan a volúmenes distintos; (b)
+  **compresor multibanda** — el de una sola banda agacha TODO ante un golpe de
+  graves, y eso es el "tuck" que él describe al entonar fuerte; (c) **sonoridad
+  al objetivo −16 LUFS** (medido: iba a −18.9; ya aplicó +3 dB de master).
+  ⚠️ **NO apilar procesado con el hardware:** dos puertas de ruido en serie se
+  comen el final de las palabras. La aplicación **ya guarda el procesado por
+  canal**, así que lo natural es Micro 1 = Maono (procesado apagado) y Micro 2 =
+  Fifine (procesado encendido).
+  ⚠️ **Síntoma aparte que hay que investigar midiendo:** dice que **el
+  ecualizador no le da la calidad de voz que quiere** y por eso lo tiene
+  apagado. Puede ser que los ajustes de fábrica no encajen con su voz, o que
+  haya algo mal. Medir con su voz real, no a ojo.
 
 ## 7. Bitácora
 
